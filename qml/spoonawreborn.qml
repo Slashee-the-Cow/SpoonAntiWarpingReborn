@@ -224,7 +224,7 @@ Item
 		spacing: UM.Theme.getSize("default_margin").height
 		width: UM.Theme.getSize("setting_control").width
 		height: UM.Theme.getSize("setting_control").height	
-		text: catalog.i18nc("@message", UM.ActiveTool.properties.getValue("SMsg"))
+		text: catalog.i18nc("@button:remove_all", "Remove All")
 		onClicked: UM.ActiveTool.triggerAction("removeAllSpoonMesh")
 	}
 	

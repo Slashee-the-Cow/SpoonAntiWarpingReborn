@@ -1,32 +1,23 @@
 # Copyright (c) 2023 5@xes
 # Based on the TabPlus plugin  and licensed under LGPLv3 or higher.
 
-VERSION_QT5 = False
-try:
-    from PyQt6.QtCore import QT_VERSION_STR
-except ImportError:
-    VERSION_QT5 = True
-    
-from . import SpoonAntiWarping
+from . import SpoonAntiWarpingReborn
 
 from UM.i18n import i18nCatalog
-i18n_catalog = i18nCatalog("spoonantiwarping")
+i18n_catalog = i18nCatalog("spoonawreborn")
 
 def getMetaData():
-    if not VERSION_QT5:
-        QmlFile="qml_qt6/CustomSpoon.qml"
-    else:
-        QmlFile="qml_qt5/CustomSpoon.qml"
-        
+    _qml_file="qml/spoonawreborn.qml"
+
     return {
         "tool": {
-            "name": i18n_catalog.i18nc("@label", "Spoon Anti-Warping"),
-            "description": i18n_catalog.i18nc("@info:tooltip", "Add Automatique Anti-Warping Spoon"),
+            "name": i18n_catalog.i18nc("@label", "Spoon Anti-Warping Reborn"),
+            "description": i18n_catalog.i18nc("@info:tooltip", "Add spoons to help prevent warping."),
             "icon": "tool_icon.svg",
-            "tool_panel": QmlFile,
+            "tool_panel": _qml_file,
             "weight": 11
         }
     }
 
 def register(app):
-    return { "tool": SpoonAntiWarping.SpoonAntiWarping() }
+    return { "tool": SpoonAntiWarpingReborn.SpoonAntiWarpingReborn() }
