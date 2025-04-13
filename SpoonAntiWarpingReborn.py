@@ -7,23 +7,22 @@
 #--------------------------------------------------------------------------------------------------------------------------------------
 # Version history (Reborn version)
 # v1.0.0:
-#   - Removed support for Qt 5 so I don't have to write everything twice. Errr I mean so it's easier to maintain.
-#   - There was some code in here that I found legitimately worrying... and an extremly convuluted way to do an extremely simple thing.
+#   - Removed support for Qt 5 so I don't have to write everything twice. Errr I mean so it's easier to maintain and avoid making mistakes.
+#   - There was some code in here that I found legitimately worrying... and an extremly convuluted way to do an extremely simple thing. It's been banished.
 #   - Refactored the hell out of this thing. If you compared it to the original version, you wouldn't think the two were related. I don't think Git does, either.
 
+from dataclasses import dataclass
+import os.path
+import math
+from typing import Optional, List
+
+import numpy as np
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QApplication
 
-import os.path
-import math
-import numpy as np
-
-
-from typing import Optional, List
 
 from cura.CuraApplication import CuraApplication
 from cura.PickingPass import PickingPass
-from cura.CuraVersion import CuraVersion  # type: ignore
 from cura.Operations.SetParentOperation import SetParentOperation
 from cura.Scene.SliceableObjectDecorator import SliceableObjectDecorator
 from cura.Scene.BuildPlateDecorator import BuildPlateDecorator
@@ -36,6 +35,7 @@ from UM.Resources import Resources
 from UM.Logger import Logger
 from UM.Message import Message
 from UM.Math.Vector import Vector
+from UM.Math.Polygon import Polygon  # Not strictly needed; not bothering implementing imports just for type checking
 from UM.Tool import Tool
 from UM.Event import Event, MouseEvent
 from UM.Mesh.MeshBuilder import MeshBuilder
@@ -50,16 +50,16 @@ from UM.Operations.RemoveSceneNodeOperation import RemoveSceneNodeOperation
 from UM.Scene.Selection import Selection
 from UM.Scene.SceneNode import SceneNode
 from UM.Scene.Iterator.DepthFirstIterator import DepthFirstIterator
-from UM.Tool import Tool
-from UM.Version import Version
-from UM.Resources import Resources
 from UM.i18n import i18nCatalog
 
-from .slasheetools import log
+from .slasheetools import log_debug as log
 
-i18n_cura_catalog = i18nCatalog("cura")
-i18n_catalog = i18nCatalog("fdmprinter.def.json")
-i18n_extrud_catalog = i18nCatalog("fdmextruder.def.json")
+@dataclass
+class Notification:
+    """Holds info for a notification message since I can't use UM.Message"""
+    text: str  # If I need to explain this you're probably not qualified to work with this code.
+    lifetime: float  # Notification lifetime in seconds
+    id: int  # Becasue we've all gotten our notifications mixed up while out shopping... right?
 
 Resources.addSearchPath(
     os.path.join(os.path.abspath(os.path.dirname(__file__)))
@@ -70,21 +70,19 @@ catalog = i18nCatalog("spoonawreborn")
 if catalog.hasTranslationLoaded():
     log("i", "Spoon Anti-Warping Reborn translation loaded")
 
-DEBUG_LOG_MODE = True  # Enable slasheetools logging
-
 class SpoonAntiWarpingReborn(Tool):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
         # Stock Data
-        self._all_picked_node: List[SceneNode] = []
+        self._all_created_spoons: List[SceneNode] = []
 
         # variable for menu dialog
-        self._UseSize = 10.0
-        self._UseLength = 2.0
-        self._UseWidth = 2.0
-        self._InitialLayerSpeed = 0.0
-        self._Nb_Layer = 1
+        self._spoon_diameter = 10.0
+        self._handle_length = 2.0
+        self._handle_width = 2.0
+        self._initial_layer_speed = 0.0
+        self._layer_count = 1
         self._direct_shape = False
 
         # Shortcut
@@ -96,15 +94,6 @@ class SpoonAntiWarpingReborn(Tool):
 
         self._application = CuraApplication.getInstance()
 
-        #important do not delete
-        self._i18n_catalog = None
-
-        # Suggested solution from fieldOfView . in this discussion solved in Cura 4.9
-        # https://github.com/5axes/Calibration-Shapes/issues/1
-        # Cura are able to find the scripts from inside the plugin folder if the scripts are into a folder named resources
-        # V1.1.1 Already added for Translation .. Don't need More SearchPath
-        # Resources.addSearchPath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources"))
-
         self.setExposedProperties("SSize", "SLength", "SWidth", "NLayer", "ISpeed", "DirectShape")
 
         # Note: if the selection is cleared with this tool active, there is no way to switch to
@@ -112,8 +101,8 @@ class SpoonAntiWarpingReborn(Tool):
         # toolbar will have been disabled. That is why we need to ignore the first press event
         # after the selection has been cleared.
         Selection.selectionChanged.connect(self._onSelectionChanged)
-        self._had_selection = False
-        self._skip_press = False
+        self._had_selection: bool = False
+        self._skip_press: bool = False
 
         self._had_selection_timer = QTimer()
         self._had_selection_timer.setInterval(0)
@@ -121,21 +110,21 @@ class SpoonAntiWarpingReborn(Tool):
         self._had_selection_timer.timeout.connect(self._selectionChangeDelay)
 
         # set the preferences to store the default value
-        self._preferences = CuraApplication.getInstance().getPreferences()
-        self._preferences.addPreference("spoon_anti_warping/s_size", 10)
-        self._preferences.addPreference("spoon_anti_warping/s_length", 2)
-        self._preferences.addPreference("spoon_anti_warping/s_width", 2)
-        self._preferences.addPreference("spoon_anti_warping/s_initial_layer_speed", 0)
-        self._preferences.addPreference("spoon_anti_warping/nb_layer", 1)
-        self._preferences.addPreference("spoon_anti_warping/direct_shape", False)
+        self._preferences = self._application.getPreferences()
+        self._preferences.addPreference("spoonawreborn/spoon_diameter", 10)
+        self._preferences.addPreference("spoonawreborn/handle_length", 2)
+        self._preferences.addPreference("spoonawreborn/handle_width", 2)
+        self._preferences.addPreference("spoonawreborn/initial_layer_speed", 0)
+        self._preferences.addPreference("spoonawreborn/layer_count", 1)
+        self._preferences.addPreference("spoonawreborn/direct_shape", False)
 
 
-        self._UseSize = float(self._preferences.getValue("spoon_anti_warping/s_size"))
-        self._UseLength = float(self._preferences.getValue("spoon_anti_warping/s_length"))
-        self._UseWidth = float(self._preferences.getValue("spoon_anti_warping/s_width"))
-        self._InitialLayerSpeed = float(self._preferences.getValue("spoon_anti_warping/s_initial_layer_speed"))
-        self._Nb_Layer = int(self._preferences.getValue("spoon_anti_warping/nb_layer"))
-        self._direct_shape = bool(self._preferences.getValue("spoon_anti_warping/direct_shape"))
+        self._spoon_diameter = float(self._preferences.getValue("spoonawreborn/spoon_diameter"))
+        self._handle_length = float(self._preferences.getValue("spoonawreborn/handle_length"))
+        self._handle_width = float(self._preferences.getValue("spoonawreborn/handle_width"))
+        self._initial_layer_speed = float(self._preferences.getValue("spoonawreborn/initial_layer_speed"))
+        self._layer_count = int(self._preferences.getValue("spoonawreborn/layer_count"))
+        self._direct_shape = bool(self._preferences.getValue("spoonawreborn/direct_shape"))
 
 
     def event(self, event) -> None:
@@ -162,7 +151,7 @@ class SpoonAntiWarpingReborn(Tool):
                 # There is no slicable object at the picked location
                 return
 
-            node_stack = picked_node.callDecoration("getStack")
+            node_stack: PerObjectContainerStack = picked_node.callDecoration("getStack")
 
             if node_stack:
                 # if it's a spoon_mesh -> remove it
@@ -170,7 +159,7 @@ class SpoonAntiWarpingReborn(Tool):
                     self._removeSpoonMesh(picked_node)
                     return
 
-                elif node_stack.getProperty("anti_overhang_mesh", "value") or node_stack.getProperty("infill_mesh", "value") or node_stack.getProperty("support_mesh", "value"):
+                if not self._is_normal_object(node_stack):
                     # Only "normal" meshes can have spoon_mesh added to them
                     # Try to add also to support but as support got a X/Y distance/ part it's useless
                     return
@@ -187,14 +176,11 @@ class SpoonAntiWarpingReborn(Tool):
             # Logger.log('d', "Name : {}".format(node_stack.getName()))
 
             # Add the spoon_mesh at the picked location
-            self._op = GroupedOperation()
             self._createSpoonMesh(picked_node, picked_position)
-            self._op.push()
 
 
     def _createSpoonMesh(self, parent: CuraSceneNode, position: Vector):
         node = CuraSceneNode()
-        EName = parent.getName()
 
         # local_transformation = parent.getLocalTransformation()
         # Logger.log('d', "Parent local_transformation --> " + str(local_transformation))
@@ -203,10 +189,7 @@ class SpoonAntiWarpingReborn(Tool):
         node.setSelectable(True)
 
         # long=Support Height
-        _long=position.y
-
-        # get layer_height_0 used to define pastille height
-        _id_ex=0
+        height_offset=position.y
 
         # This function can be triggered in the middle of a machine change, so do not proceed if the machine change has not done yet.
         global_container_stack = CuraApplication.getInstance().getGlobalContainerStack()
@@ -214,25 +197,15 @@ class SpoonAntiWarpingReborn(Tool):
         extruder_stack = CuraApplication.getInstance().getExtruderManager().getActiveExtruderStacks()[0]
         #self._Extruder_count=global_container_stack.getProperty("machine_extruder_count", "value")
 
-        _layer_h_i = extruder_stack.getProperty("layer_height_0", "value")
+        _layer_height_0 = extruder_stack.getProperty("layer_height_0", "value")
         _layer_height = extruder_stack.getProperty("layer_height", "value")
-        _layer_h = (_layer_h_i * 1.2) + (_layer_height * (self._Nb_Layer -1) )
+        _spoon_height = (_layer_height_0 * 1.2) + (_layer_height * (self._layer_count -1) )
 
-        adhesion_key = "adhesion_type"
-        adhesion = global_container_stack.getProperty(adhesion_key, "value")
-
-        if adhesion == "none":
-            message_string = catalog.i18nc("@info:setting_modification", "Anti-warping spoons Build Plate Adhesion to be on. It has been set to Skirt")
-            Message(text = message_string, title = catalog.i18nc("@title:setting_modification", "Spoon Anti-Warping Reborn: print setting change")).show()
-            # Define temporary adhesion_type=skirt to force boundary calculation ?
-            global_container_stack.setProperty(adhesion_key, "value", "skirt")
-            Logger.log('d', "Info adhesion_type --> " + str(adhesion))
-
-        _angle = self.defineAngle(EName,position)
+        _angle = self.defineAngle(parent, position)
         # Logger.log('d', "Info createSpoonMesh Angle --> " + str(_angle))
 
         # Spoon creation Diameter , Length, Width, Increment angle 10°, length, layer_height_0*1.2
-        mesh = self._createSpoon(self._UseSize,self._UseLength,self._UseWidth, 10,_long,_layer_h , self._direct_shape, _angle)
+        mesh = self._createSpoon(self._spoon_diameter,self._handle_length,self._handle_width, 10, height_offset, _spoon_height, self._direct_shape, _angle)
 
         # new_transformation = Matrix()
         node.setMeshData(mesh.build())
@@ -243,7 +216,6 @@ class SpoonAntiWarpingReborn(Tool):
 
         stack: PerObjectContainerStack = node.callDecoration("getStack") # created by SettingOverrideDecorator that is automatically added to CuraSceneNode
         settings: InstanceContainer = stack.getTop()
-
         settings.setProperty("spoon_mesh", "value", True)
 
         definition = stack.getSettingDefinition("meshfix_union_all")
@@ -253,10 +225,10 @@ class SpoonAntiWarpingReborn(Tool):
         settings.addInstance(new_instance)
 
         # speed_layer_0
-        if self._InitialLayerSpeed > 0 :
+        if self._initial_layer_speed > 0 :
             definition = stack.getSettingDefinition("speed_layer_0")
             new_instance = SettingInstance(definition, settings)
-            new_instance.setProperty("value", self._InitialLayerSpeed) # initial layer speed
+            new_instance.setProperty("value", self._initial_layer_speed) # initial layer speed
             new_instance.resetState()  # Ensure that the state is not seen as a user state.
             settings.addInstance(new_instance)
 
@@ -272,21 +244,17 @@ class SpoonAntiWarpingReborn(Tool):
         new_instance.resetState()  # Ensure that the state is not seen as a user state.
         settings.addInstance(new_instance)"""
 
-        # Fix some settings in Cura to get a better result
-        id_ex=0
-        global_container_stack = CuraApplication.getInstance().getGlobalContainerStack()
-        extruder_stack = CuraApplication.getInstance().getExtruderManager().getActiveExtruderStacks()[0]
-        #extruder = global_container_stack.extruderList[int(id_ex)]
-
         #self._op = GroupedOperation()
         # First add node to the scene at the correct position/scale, before parenting, so the Spoon mesh does not get scaled with the parent
-        self._op.addOperation(AddSceneNodeOperation(node, self._controller.getScene().getRoot())) # This one will set the model with the right transformation
-        self._op.addOperation(SetParentOperation(node, parent)) # This one will link the tab with the parent ( Scale)
+        scene_op = GroupedOperation()
+        scene_op.addOperation(AddSceneNodeOperation(node, self._controller.getScene().getRoot())) # This one will set the model with the right transformation
+        scene_op.addOperation(SetParentOperation(node, parent)) # This one will link the tab with the parent ( Scale)
 
         node.setPosition(position, CuraSceneNode.TransformSpace.World)  # Set the World Transformmation
 
-        self._all_picked_node.append(node)
+        self._all_created_spoons.append(node)
         self.propertyChanged.emit()
+        scene_op.push()
 
         CuraApplication.getInstance().getController().getScene().sceneChanged.emit(node)
 
@@ -295,8 +263,8 @@ class SpoonAntiWarpingReborn(Tool):
         if parent == self._controller.getScene().getRoot():
             parent = None
 
-        op = RemoveSceneNodeOperation(node)
-        op.push()
+        remove_op = RemoveSceneNodeOperation(node)
+        remove_op.push()
 
         if parent and not Selection.isSelected(parent):
             Selection.add(parent)
@@ -320,212 +288,229 @@ class SpoonAntiWarpingReborn(Tool):
 
         self._had_selection = has_selection
 
-    def _tangential_point_on_circle(self,center, radius, point_fixe):
+    def _is_normal_object(self, node: SceneNode) -> bool:
+        """Check to make sure a SceneNode is a regular object and not support or whatever."""
+        node_stack: PerObjectContainerStack = node.callDecoration("getStack")
+        if not node_stack:
+            return False
+        
+        type_infill_mesh = node_stack.getProperty("infill_mesh", "value")
+        type_cutting_mesh = node_stack.getProperty("cutting_mesh", "value")
+        type_support_mesh = node_stack.getProperty("support_mesh", "value")
+        type_spoon_mesh = node_stack.getProperty("spoon_mesh", "value")
+        type_anti_overhang_mesh = node_stack.getProperty("anti_overhang_mesh", "value")
+
+        return not any((type_infill_mesh, type_cutting_mesh, type_support_mesh, type_spoon_mesh, type_anti_overhang_mesh))
+
+    def _tangential_point_on_circle(self, center, radius, start_point):
+        """Return 2 tangenital points of circle from a given point"""
         # Calculation of the distance between point_fix and (center[0], center[1])
-        d = math.sqrt((center[0] - point_fixe[0])**2 + (center[1] - point_fixe[1])**2)
+        start_distance = math.sqrt((center[0] - start_point[0])**2 + (center[1] - start_point[1])**2)
 
         # Search for the points of tangency of the line with the circle
         tangency_points = []
 
         # If point_fix is on the circle, there is only one point of tangency
-        if d == radius:
-            tangency_points.append(point_fixe[0])
-            tangency_points.append(point_fixe[1])
+        if start_distance == radius:
+            tangency_points.append((start_point[0], start_point[1]))
 
         else:
-            p = math.sqrt( d**2-radius**2)
             # Calculation of the angle between the line and the radius of the circle passing through the point of tangency
-            theta = math.asin(radius / d)
+            theta = math.asin(radius / start_distance)
             # Calculation of the angle of the line
-            alpha = math.atan2(center[1] - point_fixe[1] , center[0] - point_fixe[0] )
+            alpha = math.atan2(center[1] - start_point[1] , center[0] - start_point[0] )
             # Calculation of the angles of the two rays passing through the points of tangency
             beta1 = alpha + theta
             beta2 = alpha - theta
             # Calculation of the coordinates of the tangency points
-            tx1 = center[0] - radius* math.sin(beta1)
-            ty1 = center[1] + radius* math.cos(beta1)
-            tangency_points.append(tx1)
-            tangency_points.append(ty1)
+            tan_x_1 = center[0] - radius* math.sin(beta1)
+            tan_y_1 = center[1] + radius* math.cos(beta1)
+            tangency_points.append((tan_x_1, tan_y_1))
+
+            tan_x_2 = center[0] - radius* math.sin(beta2)
+            tan_y_2 = center[1] + radius* math.cos(beta2)
+            tangency_points.append((tan_x_2, tan_y_2))
         return tangency_points
 
     # SPOON creation
-    def _createSpoon(self, size , length , width , nb , lg, He ,direct_shape ,angle):
+    def _createSpoon(self, size, handle_length, handle_width, segments,
+                     height, max_y, direct_shape, angle):
         mesh = MeshBuilder()
         # Per-vertex normals require duplication of vertices
-        r = size / 2
+        circle_radius = size / 2
         # First layer length
-        sup = -lg + He
-        l = -lg
+        max_y = -height + max_y
+        negative_height = -height
 
-        rng = int(360 / nb)
-        ang = math.radians(nb)
+        segment_degrees = round((360 / segments),4)
+        segment_radians = math.radians(segments)
 
-        verts = []
+        vertices = []
 
         # Add the handle of the spoon
-        s_sup = width / 2
-        s_inf = s_sup
+        half_handle_width = handle_width / 2
 
-        if direct_shape :
-            p = [0,s_sup]
-            c = [(r+length),0]
-            result = self._tangential_point_on_circle(c,r,p)
-            Logger.log('d', "Point tangence : {}".format(result))
-            nbv=20
-            verts = [ # 5 faces with 4 corners each
-                [-s_inf, l,  s_inf], [-s_sup,  sup,  s_sup], [ result[0],  sup,  result[1]], [ result[0], l,  result[1]],
-                [-s_sup,  sup, -s_sup], [-s_inf, l, -s_inf], [ result[0], l, -result[1]], [ result[0],  sup, -result[1]],
-                [ result[0], l, -result[1]], [-s_inf, l, -s_inf], [-s_inf, l,  s_inf], [ result[0], l,  result[1]],
-                [-s_sup,  sup, -s_sup], [ result[0],  sup, -result[1]], [ result[0],  sup,  result[1]], [-s_sup,  sup,  s_sup],
-                [-s_inf, l,  s_inf], [-s_inf, l, -s_inf], [-s_sup,  sup, -s_sup], [-s_sup,  sup,  s_sup]
+        if direct_shape:
+            circle_start = [0, half_handle_width]
+            circle_center = [(circle_radius + handle_length), 0]
+            tangent_points = self._tangential_point_on_circle(circle_center, circle_radius, circle_start)
+            log("d", f"Tangent points: {tangent_points}")
+            vertex_count = 20
+            vertices = [ # 5 faces with 4 corners each
+                [-half_handle_width, negative_height,  half_handle_width], [-half_handle_width,  max_y,  half_handle_width], [ tangent_points[0][0],  max_y,  tangent_points[0][1]], [ tangent_points[0][0], negative_height,  tangent_points[0][1]],
+                [-half_handle_width,  max_y, -half_handle_width], [-half_handle_width, negative_height, -half_handle_width], [ tangent_points[0][0], negative_height, -tangent_points[0][1]], [ tangent_points[0][0],  max_y, -tangent_points[0][1]],
+                [ tangent_points[0][0], negative_height, -tangent_points[0][1]], [-half_handle_width, negative_height, -half_handle_width], [-half_handle_width, negative_height,  half_handle_width], [ tangent_points[0][0], negative_height,  tangent_points[0][1]],
+                [-half_handle_width,  max_y, -half_handle_width], [ tangent_points[0][0],  max_y, -tangent_points[0][1]], [ tangent_points[0][0],  max_y,  tangent_points[0][1]], [-half_handle_width,  max_y,  half_handle_width],
+                [-half_handle_width, negative_height,  half_handle_width], [-half_handle_width, negative_height, -half_handle_width], [-half_handle_width,  max_y, -half_handle_width], [-half_handle_width,  max_y,  half_handle_width]
             ]
-            max_val=result[1]
-            max_l=result[0]
+            max_width=tangent_points[0][1]
+            max_length=tangent_points[0][0]
         else:
-            nbv=20
-            verts = [ # 5 faces with 4 corners each
-                [-s_inf, l,  s_inf], [-s_sup,  sup,  s_sup], [ length,  sup,  s_sup], [ length, l,  s_inf],
-                [-s_sup,  sup, -s_sup], [-s_inf, l, -s_inf], [ length, l, -s_inf], [ length,  sup, -s_sup],
-                [ length, l, -s_inf], [-s_inf, l, -s_inf], [-s_inf, l,  s_inf], [ length, l,  s_inf],
-                [-s_sup,  sup, -s_sup], [ length,  sup, -s_sup], [ length,  sup,  s_sup], [-s_sup,  sup,  s_sup],
-                [-s_inf, l,  s_inf], [-s_inf, l, -s_inf], [-s_sup,  sup, -s_sup], [-s_sup,  sup,  s_sup]
+            vertex_count = 20
+            vertices = [ # 5 faces with 4 corners each
+                [-half_handle_width, negative_height,  half_handle_width], [-half_handle_width,  max_y,  half_handle_width], [ handle_length,  max_y,  half_handle_width], [ handle_length, negative_height,  half_handle_width],
+                [-half_handle_width,  max_y, -half_handle_width], [-half_handle_width, negative_height, -half_handle_width], [ handle_length, negative_height, -half_handle_width], [ handle_length,  max_y, -half_handle_width],
+                [ handle_length, negative_height, -half_handle_width], [-half_handle_width, negative_height, -half_handle_width], [-half_handle_width, negative_height,  half_handle_width], [ handle_length, negative_height,  half_handle_width],
+                [-half_handle_width,  max_y, -half_handle_width], [ handle_length,  max_y, -half_handle_width], [ handle_length,  max_y,  half_handle_width], [-half_handle_width,  max_y,  half_handle_width],
+                [-half_handle_width, negative_height,  half_handle_width], [-half_handle_width, negative_height, -half_handle_width], [-half_handle_width,  max_y, -half_handle_width], [-half_handle_width,  max_y,  half_handle_width]
             ]
-            max_val=s_sup
-            max_l=length
+            max_width=half_handle_width
+            max_length=handle_length
 
         # Add Round Part of the Spoon
-        nbvr = 0
-        remain1 = 0
-        remain2 = 0
+        vertex_count_round = 0
+        # Used to fill in any gaps if the division of the circle into segments didn't quite add up
+        remainder_1 = 0
+        remainder_2 = 0
 
-        for i in range(0, rng):
-            if (r*math.cos((i+1)*ang)) >= 0 or (abs(r*math.sin((i+1)*ang)) > max_val and abs(r*math.sin(i*ang)) > max_val)  :
-                nbvr += 1
+        for i in range(0, math.ceil(segment_degrees)):
+            if (circle_radius*math.cos((i+1)*segment_radians)) >= 0 or (abs(circle_radius*math.sin((i+1)*segment_radians)) > max_width and abs(circle_radius*math.sin(i*segment_radians)) > max_width)  :
+                vertex_count_round += 1
                 # Top
-                verts.append([length+r, sup, 0])
-                verts.append([length+r+r*math.cos((i+1)*ang), sup, r*math.sin((i+1)*ang)])
-                verts.append([length+r+r*math.cos(i*ang), sup, r*math.sin(i*ang)])
+                vertices.append([handle_length+circle_radius, max_y, 0])
+                vertices.append([handle_length+circle_radius+circle_radius*math.cos((i+1)*segment_radians), max_y, circle_radius*math.sin((i+1)*segment_radians)])
+                vertices.append([handle_length+circle_radius+circle_radius*math.cos(i*segment_radians), max_y, circle_radius*math.sin(i*segment_radians)])
                 #Side 1a
-                verts.append([length+r+r*math.cos(i*ang), sup, r*math.sin(i*ang)])
-                verts.append([length+r+r*math.cos((i+1)*ang), sup, r*math.sin((i+1)*ang)])
-                verts.append([length+r+r*math.cos((i+1)*ang), l, r*math.sin((i+1)*ang)])
+                vertices.append([handle_length+circle_radius+circle_radius*math.cos(i*segment_radians), max_y, circle_radius*math.sin(i*segment_radians)])
+                vertices.append([handle_length+circle_radius+circle_radius*math.cos((i+1)*segment_radians), max_y, circle_radius*math.sin((i+1)*segment_radians)])
+                vertices.append([handle_length+circle_radius+circle_radius*math.cos((i+1)*segment_radians), negative_height, circle_radius*math.sin((i+1)*segment_radians)])
                 #Side 1b
-                verts.append([length+r+r*math.cos((i+1)*ang), l, r*math.sin((i+1)*ang)])
-                verts.append([length+r+r*math.cos(i*ang), l, r*math.sin(i*ang)])
-                verts.append([length+r+r*math.cos(i*ang), sup, r*math.sin(i*ang)])
+                vertices.append([handle_length+circle_radius+circle_radius*math.cos((i+1)*segment_radians), negative_height, circle_radius*math.sin((i+1)*segment_radians)])
+                vertices.append([handle_length+circle_radius+circle_radius*math.cos(i*segment_radians), negative_height, circle_radius*math.sin(i*segment_radians)])
+                vertices.append([handle_length+circle_radius+circle_radius*math.cos(i*segment_radians), max_y, circle_radius*math.sin(i*segment_radians)])
                 #Bottom
-                verts.append([length+r, l, 0])
-                verts.append([length+r+r*math.cos(i*ang), l, r*math.sin(i*ang)])
-                verts.append([length+r+r*math.cos((i+1)*ang), l, r*math.sin((i+1)*ang)])
+                vertices.append([handle_length+circle_radius, negative_height, 0])
+                vertices.append([handle_length+circle_radius+circle_radius*math.cos(i*segment_radians), negative_height, circle_radius*math.sin(i*segment_radians)])
+                vertices.append([handle_length+circle_radius+circle_radius*math.cos((i+1)*segment_radians), negative_height, circle_radius*math.sin((i+1)*segment_radians)])
             else :
-                if remain1 == 0 :
-                    remain1 = i*ang
-                    remain2 = 2*math.pi-remain1
+                if remainder_1 == 0 :
+                    remainder_1 = i*segment_radians
+                    remainder_2 = 2*math.pi-remainder_1
 
                     if direct_shape :
-                        nbvr += 1
+                        vertex_count_round += 1
                         # Top
-                        verts.append([length+r, sup, 0])
-                        verts.append([max_l, sup, max_val])
-                        verts.append([length+r+r*math.cos(remain1), sup, r*math.sin(remain1)])
+                        vertices.append([handle_length+circle_radius, max_y, 0])
+                        vertices.append([max_length, max_y, max_width])
+                        vertices.append([handle_length+circle_radius+circle_radius*math.cos(remainder_1), max_y, circle_radius*math.sin(remainder_1)])
                         #Side 1a
-                        verts.append([length+r+r*math.cos(remain1), sup, r*math.sin(remain1)])
-                        verts.append([max_l, sup, max_val])
-                        verts.append([max_l, l, max_val])
+                        vertices.append([handle_length+circle_radius+circle_radius*math.cos(remainder_1), max_y, circle_radius*math.sin(remainder_1)])
+                        vertices.append([max_length, max_y, max_width])
+                        vertices.append([max_length, negative_height, max_width])
                         #Side 1b
-                        verts.append([max_l, l, max_val])
-                        verts.append([length+r+r*math.cos(remain1), l, r*math.sin(remain1)])
-                        verts.append([length+r+r*math.cos(remain1), sup, r*math.sin(remain1)])
+                        vertices.append([max_length, negative_height, max_width])
+                        vertices.append([handle_length+circle_radius+circle_radius*math.cos(remainder_1), negative_height, circle_radius*math.sin(remainder_1)])
+                        vertices.append([handle_length+circle_radius+circle_radius*math.cos(remainder_1), max_y, circle_radius*math.sin(remainder_1)])
                         #Bottom
-                        verts.append([length+r, l, 0])
-                        verts.append([length+r+r*math.cos(remain1), l, r*math.sin(remain1)])
-                        verts.append([max_l, l, max_val])
+                        vertices.append([handle_length+circle_radius, negative_height, 0])
+                        vertices.append([handle_length+circle_radius+circle_radius*math.cos(remainder_1), negative_height, circle_radius*math.sin(remainder_1)])
+                        vertices.append([max_length, negative_height, max_width])
 
-                        nbvr += 1
+                        vertex_count_round += 1
                         # Top
-                        verts.append([length+r, sup, 0])
-                        verts.append([length+r+r*math.cos(remain2), sup, r*math.sin(remain2)])
-                        verts.append([max_l, sup, -max_val])
+                        vertices.append([handle_length+circle_radius, max_y, 0])
+                        vertices.append([handle_length+circle_radius+circle_radius*math.cos(remainder_2), max_y, circle_radius*math.sin(remainder_2)])
+                        vertices.append([max_length, max_y, -max_width])
                         #Side 1a
-                        verts.append([max_l, sup, -max_val])
-                        verts.append([length+r+r*math.cos(remain2), sup, r*math.sin(remain2)])
-                        verts.append([length+r+r*math.cos(remain2), l, r*math.sin(remain2)])
+                        vertices.append([max_length, max_y, -max_width])
+                        vertices.append([handle_length+circle_radius+circle_radius*math.cos(remainder_2), max_y, circle_radius*math.sin(remainder_2)])
+                        vertices.append([handle_length+circle_radius+circle_radius*math.cos(remainder_2), negative_height, circle_radius*math.sin(remainder_2)])
                         #Side 1b
-                        verts.append([length+r+r*math.cos(remain2), l, r*math.sin(remain2)])
-                        verts.append([max_l, l, -max_val])
-                        verts.append([max_l, sup, -max_val])
+                        vertices.append([handle_length+circle_radius+circle_radius*math.cos(remainder_2), negative_height, circle_radius*math.sin(remainder_2)])
+                        vertices.append([max_length, negative_height, -max_width])
+                        vertices.append([max_length, max_y, -max_width])
                         #Bottom
-                        verts.append([length+r, l, 0])
-                        verts.append([max_l, l, -max_val])
-                        verts.append([length+r+r*math.cos(remain2), l, r*math.sin(remain2)])
+                        vertices.append([handle_length+circle_radius, negative_height, 0])
+                        vertices.append([max_length, negative_height, -max_width])
+                        vertices.append([handle_length+circle_radius+circle_radius*math.cos(remainder_2), negative_height, circle_radius*math.sin(remainder_2)])
                     else:
-                        nbvr += 1
+                        vertex_count_round += 1
                         # Top
-                        verts.append([length+r, sup, 0])
-                        verts.append([length, sup, max_val])
-                        verts.append([length+r+r*math.cos(remain1), sup, r*math.sin(remain1)])
+                        vertices.append([handle_length+circle_radius, max_y, 0])
+                        vertices.append([handle_length, max_y, max_width])
+                        vertices.append([handle_length+circle_radius+circle_radius*math.cos(remainder_1), max_y, circle_radius*math.sin(remainder_1)])
                         #Side 1a
-                        verts.append([length+r+r*math.cos(remain1), sup, r*math.sin(remain1)])
-                        verts.append([length, sup, max_val])
-                        verts.append([length, l, max_val])
+                        vertices.append([handle_length+circle_radius+circle_radius*math.cos(remainder_1), max_y, circle_radius*math.sin(remainder_1)])
+                        vertices.append([handle_length, max_y, max_width])
+                        vertices.append([handle_length, negative_height, max_width])
                         #Side 1b
-                        verts.append([length, l, max_val])
-                        verts.append([length+r+r*math.cos(remain1), l, r*math.sin(remain1)])
-                        verts.append([length+r+r*math.cos(remain1), sup, r*math.sin(remain1)])
+                        vertices.append([handle_length, negative_height, max_width])
+                        vertices.append([handle_length+circle_radius+circle_radius*math.cos(remainder_1), negative_height, circle_radius*math.sin(remainder_1)])
+                        vertices.append([handle_length+circle_radius+circle_radius*math.cos(remainder_1), max_y, circle_radius*math.sin(remainder_1)])
                         #Bottom
-                        verts.append([length+r, l, 0])
-                        verts.append([length+r+r*math.cos(remain1), l, r*math.sin(remain1)])
-                        verts.append([length, l, max_val])
+                        vertices.append([handle_length+circle_radius, negative_height, 0])
+                        vertices.append([handle_length+circle_radius+circle_radius*math.cos(remainder_1), negative_height, circle_radius*math.sin(remainder_1)])
+                        vertices.append([handle_length, negative_height, max_width])
 
-                        nbvr += 1
+                        vertex_count_round += 1
                         # Top
-                        verts.append([length+r, sup, 0])
-                        verts.append([length+r+r*math.cos(remain2), sup, r*math.sin(remain2)])
-                        verts.append([length, sup, -max_val])
+                        vertices.append([handle_length+circle_radius, max_y, 0])
+                        vertices.append([handle_length+circle_radius+circle_radius*math.cos(remainder_2), max_y, circle_radius*math.sin(remainder_2)])
+                        vertices.append([handle_length, max_y, -max_width])
                         #Side 1a
-                        verts.append([length, sup, -max_val])
-                        verts.append([length+r+r*math.cos(remain2), sup, r*math.sin(remain2)])
-                        verts.append([length+r+r*math.cos(remain2), l, r*math.sin(remain2)])
+                        vertices.append([handle_length, max_y, -max_width])
+                        vertices.append([handle_length+circle_radius+circle_radius*math.cos(remainder_2), max_y, circle_radius*math.sin(remainder_2)])
+                        vertices.append([handle_length+circle_radius+circle_radius*math.cos(remainder_2), negative_height, circle_radius*math.sin(remainder_2)])
                         #Side 1b
-                        verts.append([length+r+r*math.cos(remain2), l, r*math.sin(remain2)])
-                        verts.append([length, l, -max_val])
-                        verts.append([length, sup, -max_val])
+                        vertices.append([handle_length+circle_radius+circle_radius*math.cos(remainder_2), negative_height, circle_radius*math.sin(remainder_2)])
+                        vertices.append([handle_length, negative_height, -max_width])
+                        vertices.append([handle_length, max_y, -max_width])
                         #Bottom
-                        verts.append([length+r, l, 0])
-                        verts.append([length, l, -max_val])
-                        verts.append([length+r+r*math.cos(remain2), l, r*math.sin(remain2)])
+                        vertices.append([handle_length+circle_radius, negative_height, 0])
+                        vertices.append([handle_length, negative_height, -max_width])
+                        vertices.append([handle_length+circle_radius+circle_radius*math.cos(remainder_2), negative_height, circle_radius*math.sin(remainder_2)])
 
         # Add link part between handle and Round Part
         # Top center
-        verts.append([max_l, sup, max_val])
-        verts.append([length+r, sup, 0])
-        verts.append([max_l, sup, -max_val])
+        vertices.append([max_length, max_y, max_width])
+        vertices.append([handle_length+circle_radius, max_y, 0])
+        vertices.append([max_length, max_y, -max_width])
 
         # Bottom  center
-        verts.append([max_l, l, -max_val])
-        verts.append([length+r, l, 0])
-        verts.append([max_l, l, max_val])
+        vertices.append([max_length, negative_height, -max_width])
+        vertices.append([handle_length+circle_radius, negative_height, 0])
+        vertices.append([max_length, negative_height, max_width])
 
         # Rotate the mesh
-        tot = nbvr * 12 + 6 + nbv
-        Tverts = []
+        vertex_total = vertex_count_round * 12 + 6 + vertex_count
+        rotated_vertices = []
         # Logger.log('d', "Angle Rotation : {}".format(angle))
-        for i in range(0,tot) :
-            xr = (verts[i][0] * math.cos(angle)) - (verts[i][2] * math.sin(angle))
-            yr = (verts[i][0] * math.sin(angle)) + (verts[i][2] * math.cos(angle))
-            zr = verts[i][1]
-            Tverts.append([xr, zr, yr])
+        for i in range(0,vertex_total) :
+            xr = (vertices[i][0] * math.cos(angle)) - (vertices[i][2] * math.sin(angle))
+            yr = (vertices[i][0] * math.sin(angle)) + (vertices[i][2] * math.cos(angle))
+            zr = vertices[i][1]
+            rotated_vertices.append([xr, zr, yr])
 
-        mesh.setVertices(np.asarray(Tverts, dtype=np.float32))
+        mesh.setVertices(np.asarray(rotated_vertices, dtype=np.float32))
 
         indices = []
-        for i in range(0, nbv, 4): # All 6 quads (12 triangles)
+        for i in range(0, vertex_count, 4): # All 6 quads (12 triangles)
             indices.append([i, i+2, i+1])
             indices.append([i, i+3, i+2])
 
         # for every angle increment 12 Vertices
-        tot = nbvr * 12 + 6 + nbv
-        for i in range(nbv, tot, 3): #
+        vertex_total = vertex_count_round * 12 + 6 + vertex_count
+        for i in range(vertex_count, vertex_total, 3): #
             indices.append([i, i+1, i+2])
         mesh.setIndices(np.asarray(indices, dtype=np.int32))
 
@@ -533,12 +518,12 @@ class SpoonAntiWarpingReborn(Tool):
         return mesh
 
     def removeAllSpoonMesh(self):
-        if self._all_picked_node:
-            for node in self._all_picked_node:
+        if self._all_created_spoons:
+            for node in self._all_created_spoons:
                 node_stack: PerObjectContainerStack = node.callDecoration("getStack")
                 if node_stack.getProperty("spoon_mesh", "value"):
                     self._removeSpoonMesh(node)
-            self._all_picked_node = []
+            self._all_created_spoons = []
             self.propertyChanged.emit()
         else:
             for node in DepthFirstIterator(self._application.getController().getScene().getRoot()):
@@ -566,171 +551,148 @@ class SpoonAntiWarpingReborn(Tool):
         return []
 
 
-    def defineAngle(self, Cname : str, act_position: Vector) -> float:
-        Angle = 0
-        min_lght = 9999999.999
+    def defineAngle(self, node: CuraSceneNode, spoon_position: Vector) -> float:
+        """Computes the angle to a point on the convex hull for the spoon to point at."""
+        hull_scale_factor: float = 1.1
+        
+        result_angle = 0
+        min_length = math.inf
         # Set on the build plate for distance
-        calc_position = Vector(act_position.x, 0, act_position.z)
-        # Logger.log('d', "Position : {}".format(calc_position))
+        start_position = Vector(spoon_position.x, 0, spoon_position.z)
 
-        nodes_list = self._getAllSelectedNodes()
-        if not nodes_list:
-            nodes_list = DepthFirstIterator(self._application.getController().getScene().getRoot())
+        if not node.callDecoration("isSliceable"):
+            log("w", f"{node.getName} is not sliceable")
+            return result_angle
 
-        for node in nodes_list:
-            if node.callDecoration("isSliceable"):
-                # Logger.log('d', "isSliceable : {}".format(node.getName()))
-                node_stack=node.callDecoration("getStack")
-                if node_stack:
-                    if node.getName()==Cname :
-                        # Logger.log('d', "Mesh : {}".format(node.getName()))
+        # hull_polygon = node.callDecoration("getAdhesionArea")
+        # hull_polygon = node.callDecoration("getConvexHull")
+        # hull_polygon = node.callDecoration("getConvexHullBoundary")
+        # hull_polygon = node.callDecoration("_compute2DConvexHull")
+        object_hull: Polygon = node.callDecoration("getConvexHullBoundary")
+        if object_hull is None:
+            object_hull = node.callDecoration("getConvexHull")
 
-                        hull_polygon = node.callDecoration("getAdhesionArea")
-                        # hull_polygon = node.callDecoration("getConvexHull")
-                        # hull_polygon = node.callDecoration("getConvexHullBoundary")
-                        # hull_polygon = node.callDecoration("_compute2DConvexHull")
+        if not object_hull or object_hull.getPoints is None:
+            log("w", f"{node.getName()} cannot be calculated because a convex hull cannot be generated.")
+            return result_angle
 
-                        if not hull_polygon or hull_polygon.getPoints is None:
-                            Logger.log("w", "Object {} cannot be calculated because it has no convex hull.".format(node.getName()))
-                            return 0
+        hull_polygon = object_hull.scale(hull_scale_factor)
+        
+        hull_points = hull_polygon.getPoints()
+        # nb_pt = point[0] / point[1] must be divided by 2
+        # Angle Ref for angle / Y Dir
+        angle_reference = Vector(0, 0, 1)
+        start_index=0
+        end_index=0
 
-                        points=hull_polygon.getPoints()
-                        # nb_pt = point[0] / point[1] must be divided by 2
-                        # Angle Ref for angle / Y Dir
-                        ref = Vector(0, 0, 1)
-                        Id=0
-                        Start_Id=0
-                        End_Id=0
-                        for point in points:
-                            # Logger.log('d', "Point : {}".format(point))
-                            new_position = Vector(point[0], 0, point[1])
-                            lg=calc_position-new_position
-                            # lght = lg.length()
-                            lght = round(lg.length(),0)
+        # Find point closest to start position
+        for index, point in enumerate(hull_points):
+            # Logger.log('d', "Point : {}".format(point))
+            test_position = Vector(point[0], 0, point[1])
+            difference_vector = start_position - test_position
+            length = difference_vector.length()
 
-                            if lght<min_lght and lght>0 :
-                                min_lght=lght
-                                Start_Id=Id
-                                Select_position = new_position
-                                unit_vector2 = lg.normalized()
-                                LeSin = math.asin(ref.dot(unit_vector2))
-                                #LeCos = math.acos(ref.dot(unit_vector2))
+            if 0 < length < min_length:
+                min_length = length
+                start_index = index
+                angle_vector = difference_vector.normalized()
+                calculated_angle = math.asin(angle_reference.dot(angle_vector))
+                #LeCos = math.acos(ref.dot(unit_vector2))
 
-                                if unit_vector2.x>=0 :
-                                    Angle = math.pi+LeSin  #angle in radian
-                                else :
-                                    Angle = -LeSin
+                if angle_vector.x >= 0:
+                    result_angle = math.pi + calculated_angle  #angle in radian
+                else :
+                    result_angle = -calculated_angle
 
-                            if lght==min_lght and lght>0 :
-                                if Id > End_Id+1 :
-                                    Start_Id=Id
-                                    End_Id=Id
-                                else :
-                                    End_Id=Id
+            if length == min_length and length > 0:
+                if index > end_index + 1:
+                    start_index = index
+                    end_index = index
+                else:
+                    end_index = index
 
-                            Id+=1
+        # Sometimes automatic creation (rarely from a PickingPass) multiple "closest"
+        if start_index != end_index :
+            # Get the hull point halfway between the two closest indices
+            index = round(start_index + 0.5 * (end_index - start_index))
+            test_position = Vector(hull_points[index][0], 0, hull_points[index][1])
+            difference_vector = start_position - test_position
+            angle_vector = difference_vector.normalized()
+            calculated_angle = math.asin(angle_reference.dot(angle_vector))
+            # LeCos = math.acos(ref.dot(unit_vector2))
 
-                        # Could be the case with automatic .. rarely in pickpoint
-                        if Start_Id != End_Id :
-                            Id=int(Start_Id+0.5*(End_Id-Start_Id))
-                            new_position = Vector(points[Id][0], 0, points[Id][1])
-                            lg=calc_position-new_position
-                            unit_vector2 = lg.normalized()
-                            LeSin = math.asin(ref.dot(unit_vector2))
-                            # LeCos = math.acos(ref.dot(unit_vector2))
+            if angle_vector.x >= 0:
+                result_angle = math.pi + calculated_angle  #angle in radian
+            else :
+                result_angle = -calculated_angle
 
-                            if unit_vector2.x>=0 :
-                                Angle = math.pi+LeSin  #angle in radian
-                            else :
-                                Angle = -LeSin
-
-                        # Logger.log('d', "Pick_position   : {}".format(calc_position))
-                        # Logger.log('d', "Close_position  : {}".format(Select_position))
-                        # Logger.log('d', "Unit_vector2    : {}".format(unit_vector2))
-                        # Logger.log('d', "Angle Sinus     : {}".format(math.degrees(LeSin)))
-                        # Logger.log('d', "Angle Cosinus   : {}".format(math.degrees(LeCos)))
-                        # Logger.log('d', "Chose Angle     : {}".format(math.degrees(Angle)))
-        return Angle
-
+        # Logger.log('d', "Pick_position   : {}".format(calc_position))
+        # Logger.log('d', "Close_position  : {}".format(Select_position))
+        # Logger.log('d', "Unit_vector2    : {}".format(unit_vector2))
+        # Logger.log('d', "Angle Sinus     : {}".format(math.degrees(LeSin)))
+        # Logger.log('d', "Angle Cosinus   : {}".format(math.degrees(LeCos)))
+        # Logger.log('d', "Chose Angle     : {}".format(math.degrees(Angle)))
+        return result_angle
+    
     # Automatic creation
-    def addAutoSpoonMesh(self) -> int:
-        nb_Tab=0
-        act_position = Vector(99999.99,99999.99,99999.99)
-        first_pt=Vector
+    def addAutoSpoonMesh(self) -> None:
 
+        minimum_spoon_gap = self._spoon_diameter * 0.8
+        
         nodes_list = self._getAllSelectedNodes()
         if not nodes_list:
             nodes_list = DepthFirstIterator(self._application.getController().getScene().getRoot())
 
-        if self._all_picked_node:
-            self._all_picked_node = []
-
-        self._op = GroupedOperation()
         for node in nodes_list:
-            if node.callDecoration("isSliceable"):
-                # Logger.log('d', "isSliceable : {}".format(node.getName()))
-                node_stack=node.callDecoration("getStack")
-                if node_stack:
-                    type_infill_mesh = node_stack.getProperty("infill_mesh", "value")
-                    type_cutting_mesh = node_stack.getProperty("cutting_mesh", "value")
-                    type_support_mesh = node_stack.getProperty("support_mesh", "value")
-                    type_spoon_mesh = node_stack.getProperty("spoon_mesh", "value")
-                    type_anti_overhang_mesh = node_stack.getProperty("anti_overhang_mesh", "value")
+            if not node.callDecoration("isSliceable"):
+                continue
+            node_stack=node.callDecoration("getStack")
+            if not node_stack:
+                continue
+            
+            if not self._is_normal_object(node):
+                continue
+            # and Selection.isSelected(node)
+            # Logger.log('d', "Mesh : {}".format(node.getName()))
 
-                    if not type_infill_mesh and not type_support_mesh and not type_anti_overhang_mesh :
-                    # and Selection.isSelected(node)
-                        # Logger.log('d', "Mesh : {}".format(node.getName()))
+            hull_polygon: Polygon = node.callDecoration("getConvexHullBoundary")
+            if hull_polygon is None:
+                hull_polygon = node.callDecoration("getConvexHull")
 
-                        # hull_polygon = node.callDecoration("getAdhesionArea")
-                        # hull_polygon = node.callDecoration("getConvexHull")
-                        # hull_polygon = node.callDecoration("getConvexHullBoundary")
-                        hull_polygon = node.callDecoration("_compute2DConvexHull")
+            if not hull_polygon or not hull_polygon.isValid():
+                log("w", f"Object {node.getName()} cannot be calculated because it has no convex hull.")
+                continue
 
-                        if not hull_polygon or hull_polygon.getPoints is None:
-                            Logger.log("w", "Object {} cannot be calculated because it has no convex hull.".format(node.getName()))
-                            continue
+            points = hull_polygon.getPoints()
 
-                        points=hull_polygon.getPoints()
-                        # nb_pt = point[0] / point[1] must be divided by 2
-                        nb_pt=points.size*0.5
-                        # Logger.log('d', "Size pt : {}".format(nb_pt))
+            first_point: Vector = Vector(points[0][0],0,points[0][1])
+            last_spoon_position: Vector = None
 
-                        for point in points:
-                            nb_Tab+=1
-                            # Logger.log('d', "Nb_Tab : {}".format(nb_Tab))
-                            if nb_Tab == 1:
-                                first_pt = Vector(point[0], 0, point[1])
-                                # Logger.log('d', "First X : {}".format(point[0]))
-                                # Logger.log('d', "First Y : {}".format(point[1]))
+            log("d", "About to list points in convex hull")
+            for point in points:
+                log("d", point)
 
-                            # Logger.log('d', "X : {}".format(point[0]))
-                            # Logger.log('d', "Y : {}".format(point[1]))
-                            new_position = Vector(point[0], 0, point[1])
-                            lg=act_position-new_position
-                            lght = round(lg.length(),0)
-                            # Logger.log('d', "Length : {}".format(lght))
-                            # Add a tab if the distance between 2 tabs are more than a Tab Radius
-                            # We have to tune this parameter or algorythm in the futur
-                            if nb_Tab == nb_pt:
-                                lgfl=(first_pt-new_position).length()
+            for i, point in enumerate(points):
+                point_position = Vector(point[0], 0, point[1])
+                if not last_spoon_position:
+                    self._createSpoonMesh(node, point_position)
+                    last_spoon_position = point_position
+                    continue
+                
+                difference_vector = last_spoon_position - point_position
+                difference_length = round(difference_vector.length(),4)
+                # Make sure not to place spoons too close together
+                first_to_last_distance = (first_point - point_position).length() if i == len(points) - 1 else 0
 
-                                # Logger.log('d', "Length First Last : {}".format(lgfl))
-                                if lght >= (self._UseSize*0.8) and lgfl >= (self._UseSize*0.8) :
-                                    self._createSpoonMesh(node, new_position)
-                                    act_position = new_position
-                            else:
-                                if lght >= (self._UseSize*0.8) :
-                                    self._createSpoonMesh(node, new_position)
-                                    act_position = new_position
-
-        self._op.push()
-        return nb_Tab
+                if difference_length >= minimum_spoon_gap or first_to_last_distance >= minimum_spoon_gap:
+                    self._createSpoonMesh(node, point_position)
+                    last_spoon_position = point_position
 
     def getSSize(self) -> float:
         """
             return: global _UseSize  in mm.
         """
-        return self._UseSize
+        return self._spoon_diameter
 
     def setSSize(self, SSize: str) -> None:
         """
@@ -745,14 +707,14 @@ class SpoonAntiWarpingReborn(Tool):
         if s_value <= 0:
             return
         #Logger.log('d', 's_value : ' + str(s_value))
-        self._UseSize = s_value
-        self._preferences.setValue("spoon_anti_warping/s_size", s_value)
+        self._spoon_diameter = s_value
+        self._preferences.setValue("spoonawreborn/spoon_diameter", s_value)
 
     def getSLength(self) -> float:
         """
             return: global _UseLength  in mm.
         """
-        return self._UseLength
+        return self._handle_length
 
     def setSLength(self, SLength: str) -> None:
         """
@@ -767,14 +729,14 @@ class SpoonAntiWarpingReborn(Tool):
         if s_value < 0:
             return
         #Logger.log('d', 's_value : ' + str(s_value))
-        self._UseLength = s_value
-        self._preferences.setValue("spoon_anti_warping/s_length", s_value)
+        self._handle_length = s_value
+        self._preferences.setValue("spoonawreborn/handle_length", s_value)
 
     def getSWidth(self) -> float:
         """
             return: global _UseWidth  in mm.
         """
-        return self._UseWidth
+        return self._handle_width
 
     def setSWidth(self, SWidth: str) -> None:
         """
@@ -789,14 +751,14 @@ class SpoonAntiWarpingReborn(Tool):
         if s_value < 0:
             return
         #Logger.log('d', 's_value : ' + str(s_value))
-        self._UseWidth = s_value
-        self._preferences.setValue("spoon_anti_warping/s_width", s_value)
+        self._handle_width = s_value
+        self._preferences.setValue("spoonawreborn/handle_width", s_value)
 
     def getISpeed(self) -> float:
         """
             return: global _InitialLayerSpeed  in mm/s.
         """
-        return self._InitialLayerSpeed
+        return self._initial_layer_speed
 
     def setISpeed(self, ISpeed: str) -> None:
         """
@@ -811,14 +773,14 @@ class SpoonAntiWarpingReborn(Tool):
         if s_value < 0:
             return
         # Logger.log('d', 'ISpeed : ' + str(s_value))
-        self._InitialLayerSpeed = s_value
-        self._preferences.setValue("spoon_anti_warping/s_initial_layer_speed", s_value)
+        self._initial_layer_speed = s_value
+        self._preferences.setValue("spoonawreborn/initial_layer_speed", s_value)
 
     def getNLayer(self) -> int:
         """
             return: global _Nb_Layer
         """
-        return self._Nb_Layer
+        return self._layer_count
 
     def setNLayer(self, NLayer: str) -> None:
         """
@@ -835,8 +797,8 @@ class SpoonAntiWarpingReborn(Tool):
             return
 
         #Logger.log('d', 'i_value : ' + str(i_value))
-        self._Nb_Layer = i_value
-        self._preferences.setValue("spoon_anti_warping/nb_layer", i_value)
+        self._layer_count = i_value
+        self._preferences.setValue("spoonawreborn/layer_count", i_value)
 
     def getDirectShape(self )-> bool:
         return self._direct_shape
@@ -845,4 +807,4 @@ class SpoonAntiWarpingReborn(Tool):
         # Logger.log("w", "setDirectShape {}".format(value))
         self._direct_shape = value
         self.propertyChanged.emit()
-        self._preferences.setValue("spoon_anti_warping/direct_shape", self._direct_shape)
+        self._preferences.setValue("spoonawreborn/direct_shape", self._direct_shape)

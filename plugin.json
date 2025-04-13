@@ -2,7 +2,7 @@
     "name": "Spoon Anti-Warping Reborn",
     "author": "Slashee the Cow",
     "version": "1.0.0",
-    "description": "Add spoons to models to help prevent warping. Originally by 5@xes.",
+    "description": "Add \"spoons\" to parts of models to help prevent warping. Originally by 5@xes.",
     "i18n-catalog": "spoonawreborn",
     "api": 8,
     "supported_sdk_versions": ["8.0.0", "8.1.0", "8.2.0", "8.3.0", "8.4.0", "8.5.0", "8.6.0", "8.7.0", "8.8.0", "8.9.0", "8.10.0"]

@@ -5,11 +5,9 @@
 //   "SSize"       : Tab Size in mm
 //   "SLength"     : Length set for Tab in mm
 //   "SWidth"      : Width set for Tab in mm
-//   "SCapsule"    : Define as capsule
 //   "NLayer"      : Number of layer
 //   "ISpeed"      : Initial Speed in mm/s
 //   "DirectShape" : Direct shape
-//   "SMsg"        : Text for the Remove All Button
 //
 //-----------------------------------------------------------------------------
 
@@ -24,7 +22,7 @@ Item
     id: base
     width: childrenRect.width
     height: childrenRect.height
-    UM.I18nCatalog { id: catalog; name: "spoonantiwarping"}
+    UM.I18nCatalog { id: catalog; name: "spoonawreborn"}
 	
 	property int localwidth:70
 
