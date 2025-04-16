@@ -34,6 +34,7 @@
 from dataclasses import dataclass
 import os.path
 import math
+import random  # To make node names reasonably unique
 
 import numpy as np
 from PyQt6.QtCore import Qt, QTimer
@@ -96,6 +97,9 @@ class SpoonAntiWarpingReborn(Tool):
         # List of created spoons (for delete all function)
         self._all_created_spoons: list[SceneNode] = []
 
+        self._node_name_prefix: str = "<SpoonTab:"
+        self._node_name_suffix: str = ">"
+
         # Spoon creation settings
         self._spoon_diameter: float = 10.0
         self._handle_length: float = 2.0
@@ -104,6 +108,8 @@ class SpoonAntiWarpingReborn(Tool):
         self._teardrop_shape: bool = False
 
         self._inputs_valid: bool = False
+
+        self._default_reference_distance = 5
 
         self._are_messages_hidden: bool = False
         self._hidden_messages: list[Message] = []
@@ -166,6 +172,8 @@ class SpoonAntiWarpingReborn(Tool):
                 self._controller.setActiveTool("RotateTool")
                 return
 
+            log("d", "You clicked with SpoonAntiWarpingReborn active!")
+
             if self._skip_press:
                 # The selection was previously cleared, do not add/remove an support mesh but
                 # use this click for selection and reactivating this tool only.
@@ -178,26 +186,37 @@ class SpoonAntiWarpingReborn(Tool):
             picked_node = self._controller.getScene().findObject(self._selection_pass.getIdAtPosition(event.x, event.y))
             if not picked_node:
                 # There is no slicable object at the picked location
+                log("d", "SpoonAntiWarpingReborn.event() has no selected node")
                 return
+            log("d", f"SpoonAntiWarpingReborn.event has picked node {picked_node.getName()}")
 
+            # if it's a spoon_mesh -> remove it
+            if self._is_spoon_by_name(picked_node.getName()):
+                log("d", f"SpoonAntiWarpingReborn.event() > {picked_node.getName()} is a spoon so will be deleted.")
+                self._removeSpoonMesh(picked_node)
+                return
             node_stack: PerObjectContainerStack = picked_node.callDecoration("getStack")
 
             if node_stack:
-                # if it's a spoon_mesh -> remove it
-                if node_stack.getProperty("spoon_mesh", "value"):
-                    self._removeSpoonMesh(picked_node)
-                    return
-
-                if not self._is_normal_object(node_stack):
-                    # Only "normal" meshes can have spoon_mesh added to them
-                    # Try to add also to support but as support got a X/Y distance/ part it's useless
-                    return
+                log("d", "SpoonAntiWarpingReborn.event > testing node_stack")
+                try:
+                    if not self._is_normal_object(picked_node):
+                        # Only "normal" meshes can have spoon_mesh added to them
+                        log("d", f"SpoonAntiWarpingReborn.event() > picked_node {picked_node.getName()} isn't a normal mesh.")
+                        return
+                    log("d", f"SpoonAntiWarpingReborn.event just passed \"abnormal object\" check")
+                except Exception as e:
+                    log("e", f"SpoonAntiWarpingReborn.event had exception on _is_normal_object check: {e}")
 
             if not self._inputs_valid:
                 log("d", "Tried to create a spoon with invalid inputs")
                 self._notification_add(catalog.i18nc("add_spoon_invalid_input", "Cannot create a tab while some of the settings are not valid. Please check the tool's settings."), 10)
+                log("d", f"SpoonAntiWarpingReborn.event() > _self.inputs_valid is False")
                 return
+            log("d", f"SpoonAntiWarpingReborn.event() just passed invalid settings check")
 
+
+            log("d", "SpoonAntiWarpingReborn.event() just passed all checks.")
             self._last_picked_node = picked_node
             self._last_event = event
 
@@ -278,7 +297,7 @@ class SpoonAntiWarpingReborn(Tool):
             log("d", f"_notification_remove could not find notification with text {notification.text} and ID {notification.id}")
 
     def _notifications_set_property(self) -> None:
-        self._notifications_string = "<br><br>".join(notification.text for notification in self._notifications)
+        self._notifications_string = "" + "<br><br>".join(notification.text for notification in self._notifications)
         self.propertyChanged.emit()
 
     def _check_valid_placement(self, picked_position) -> bool:
@@ -312,13 +331,22 @@ class SpoonAntiWarpingReborn(Tool):
         #TODO: Use SceneNode.collidesWithBbox()
         return True
 
+    def _random_name_part(self) -> str:
+        return str(hex(round(random.random()*65536))).lstrip("0x").upper().zfill(4)
+
+    def _generate_node_name(self) -> str:
+        return f"{self._node_name_prefix}{self._random_name_part()}{self._node_name_suffix}"
+
+    def _is_spoon_by_name(self, node_name: str) -> bool:
+        return node_name.startswith(self._node_name_prefix) and node_name.endswith(self._node_name_suffix)
+
     def _createSpoonMesh(self, parent: CuraSceneNode, position: Vector):
         node = CuraSceneNode()
 
         # local_transformation = parent.getLocalTransformation()
         # Logger.log('d', "Parent local_transformation --> " + str(local_transformation))
 
-        node.setName("SpoonTab")
+        node.setName(self._generate_node_name())
         node.setSelectable(True)
 
         # long=Support Height
@@ -349,7 +377,6 @@ class SpoonAntiWarpingReborn(Tool):
 
         stack: PerObjectContainerStack = node.callDecoration("getStack") # created by SettingOverrideDecorator that is automatically added to CuraSceneNode
         settings: InstanceContainer = stack.getTop()
-        settings.setProperty("spoon_mesh", "value", True)
 
         definition = stack.getSettingDefinition("meshfix_union_all")
         new_instance = SettingInstance(definition, settings)
@@ -422,7 +449,7 @@ class SpoonAntiWarpingReborn(Tool):
         type_infill_mesh = node_stack.getProperty("infill_mesh", "value")
         type_cutting_mesh = node_stack.getProperty("cutting_mesh", "value")
         type_support_mesh = node_stack.getProperty("support_mesh", "value")
-        type_spoon_mesh = node_stack.getProperty("spoon_mesh", "value")
+        type_spoon_mesh = self._is_spoon_by_name(node.getName())
         type_anti_overhang_mesh = node_stack.getProperty("anti_overhang_mesh", "value")
 
         return not any((type_infill_mesh, type_cutting_mesh, type_support_mesh, type_spoon_mesh, type_anti_overhang_mesh))
@@ -644,12 +671,16 @@ class SpoonAntiWarpingReborn(Tool):
         return mesh
 
     def removeAllSpoonMesh(self):
+        log("d", f"removeAllSpoonMesh run with _all_created_spoons of {self._all_created_spoons}")
         if self._all_created_spoons:
             for node in self._all_created_spoons:
-                node_stack: PerObjectContainerStack = node.callDecoration("getStack")
-                if node_stack.getProperty("spoon_mesh", "value"):
+                if self._is_spoon_by_name(node.getName()):
                     self._removeSpoonMesh(node)
             self._all_created_spoons.clear()
+        # The list has no persistence so we need to check by name anyway
+        for node in DepthFirstIterator(self._application.getController().getScene().getRoot()):
+            if self._is_spoon_by_name(node.getName()):
+                self._removeSpoonMesh(node)
             self.propertyChanged.emit()
 
     # Source code from MeshTools Plugin
@@ -670,10 +701,70 @@ class SpoonAntiWarpingReborn(Tool):
 
         return []
 
+    def get_hull_bounds(self, hull_points: np.ndarray) -> tuple[float, float]:
+        """Calculates the width and height of a set of hull points."""
+        min_x = np.min(hull_points[:, 0])
+        max_x = np.max(hull_points[:, 0])
+        min_y = np.min(hull_points[:, 1])
+        max_y = np.max(hull_points[:, 1])
+        width = max_x - min_x
+        height = max_y - min_y
+        return width, height
+
+    def get_corner_scale_factor(self, hull_points: np.ndarray, main_outset: float) -> float:
+        """Calculates a scaling factor for corner outset."""
+        width, height = self.get_hull_bounds(hull_points)
+        larger_dimension = max(width, height)
+        if larger_dimension == 0:  # Avoid division by zero for degenerate cases
+            return 1.0 + (0.70 * main_outset)
+        return 1.0 + (0.70 * main_outset) / larger_dimension
+
+    def line_segment_length_numpy(self, point1: np.ndarray, point2: np.ndarray) -> float:
+        """
+        Calculates the Euclidean distance between two 2D points using NumPy.
+
+        Args:
+            point1 (np.ndarray): A NumPy array of shape (2,) representing the first point [x1, y1].
+            point2 (np.ndarray): A NumPy array of shape (2,) representing the second point [x2, y2].
+
+        Returns:
+            float: The length of the line segment.
+        """
+        return np.linalg.norm(point2 - point1)
+
+    def _generate_reference_points(self, hull_points: np.ndarray, desired_spacing_mm: float) -> np.ndarray:
+        """
+        Generates a series of reference points along the edges of a convex hull
+        for nearest-point calculations. Avoids duplicate vertices.
+
+        Args:
+            hull_points (np.ndarray): A NumPy array of shape (n, 2) representing the vertices of the convex hull in order.
+            desired_spacing_mm (float): The desired spacing between reference points along the edges in millimeters.
+
+        Returns:
+            np.ndarray: A NumPy array of shape (m, 2) containing all the reference points.
+        """
+        if desired_spacing_mm is None:
+            desired_spacing_mm = self._default_reference_distance
+        all_edge_points = []
+        num_hull_points = len(hull_points)
+
+        for i in range(num_hull_points):
+            start_point = hull_points[i]
+            end_point = hull_points[(i + 1) % num_hull_points]
+
+            edge_length = self.line_segment_length_numpy(start_point, end_point)
+            num_points = max(2, int(edge_length / desired_spacing_mm) + 1)
+
+            edge_points = np.linspace(start_point, end_point, num_points)[:-1]
+            all_edge_points.append(edge_points)
+
+        combined_points = np.concatenate(all_edge_points, axis=0)
+        return combined_points
 
     def defineAngle(self, node: CuraSceneNode, spoon_position: Vector) -> float:
         """Computes the angle to a point on the convex hull for the spoon to point at."""
-        hull_scale_factor: float = 1.1
+        #hull_scale_factor: float = 4
 
         result_angle = 0
         min_length = math.inf
@@ -696,9 +787,43 @@ class SpoonAntiWarpingReborn(Tool):
             log("w", f"{node.getName()} cannot be calculated because a convex hull cannot be generated.")
             return result_angle
 
-        hull_polygon = object_hull.scale(hull_scale_factor)
+        object_points = object_hull.getPoints()
 
-        hull_points = hull_polygon.getPoints()
+        log("d", f"object_points = {object_points}")
+
+        spoon_outset = round((self._spoon_diameter + self._handle_length) * 1.1, 4)
+        log("d", f"spoon_circle_radius = {spoon_outset}")
+        #minkowski_circle = Polygon.approximatedCircle(spoon_outset)
+        #outer_minkowski_circle = minkowski_circle.translate(object_points[0][0], object_points[0][1])
+
+        minkowski_square_points = [[spoon_outset, -spoon_outset],
+                            [-spoon_outset, -spoon_outset],
+                            [-spoon_outset, spoon_outset],
+                            [spoon_outset, spoon_outset]]
+
+        minkowski_square = Polygon(minkowski_square_points)
+        log("d", f"minkowski_square = {repr(minkowski_square)}")
+
+        minkowski_points = object_hull.getMinkowskiHull(minkowski_square).getPoints()
+        log("d", f"minkowski_hull_points = {repr(minkowski_points)}")
+
+        reference_points = self._generate_reference_points(minkowski_points, self._default_reference_distance)
+        log("d", f"reference_points = {repr(reference_points)}")
+
+        # Create a smaller Minkowski hull so points on the convex hull have a point close to them perpendicularly
+        spoon_corner_outset = round(spoon_outset * 0.6, 4)
+        minkowski_corner_points = [[spoon_corner_outset, -spoon_corner_outset],
+                                   [-spoon_corner_outset, -spoon_corner_outset],
+                                   [-spoon_corner_outset, spoon_corner_outset],
+                                   [spoon_corner_outset, spoon_corner_outset]]
+        minkowski_corner_square = Polygon(minkowski_corner_points)
+        minkowski_corner_points = object_hull.getMinkowskiHull(minkowski_corner_square).getPoints()
+        log("d", f"minkowski_inner_points = {repr(minkowski_corner_points)}")
+
+        combined_points = np.concatenate((reference_points, minkowski_corner_points), axis=0)
+        #hull_polygon = object_hull.scale(hull_scale_factor)
+
+        #hull_points = hull_polygon.getPoints()
         # nb_pt = point[0] / point[1] must be divided by 2
         # Angle Ref for angle / Y Dir
         angle_reference = Vector(0, 0, 1)
@@ -706,7 +831,7 @@ class SpoonAntiWarpingReborn(Tool):
         end_index=0
 
         # Find point closest to start position
-        for index, point in enumerate(hull_points):
+        for index, point in enumerate(combined_points):
             # Logger.log('d', "Point : {}".format(point))
             test_position = Vector(point[0], 0, point[1])
             difference_vector = start_position - test_position
@@ -735,7 +860,7 @@ class SpoonAntiWarpingReborn(Tool):
         if start_index != end_index :
             # Get the hull point halfway between the two closest indices
             index = round(start_index + 0.5 * (end_index - start_index))
-            test_position = Vector(hull_points[index][0], 0, hull_points[index][1])
+            test_position = Vector(combined_points[index][0], 0, combined_points[index][1])
             difference_vector = start_position - test_position
             angle_vector = difference_vector.normalized()
             calculated_angle = math.asin(angle_reference.dot(angle_vector))
@@ -871,7 +996,7 @@ class SpoonAntiWarpingReborn(Tool):
 
     def getNotifications(self) -> str:
         """_notififcations getter for QML"""
-        return self._notifications_string
+        return self._notifications_string if self._notifications_string else ""
 
     def setNotifications(self, value: str) -> None:
         """The QML should never run this. But it probably will.

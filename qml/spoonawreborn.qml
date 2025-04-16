@@ -16,6 +16,7 @@ https://github.com/5axes/SpoonAntiWarping
 
 import QtQuick 6.0
 import QtQuick.Controls 6.0
+import QtQuick.Layouts 6.0
 
 import UM 1.6 as UM
 import Cura 1.1 as Cura
@@ -191,6 +192,7 @@ Item
     }
 	
 	property int localwidth: UM.Theme.getSize("setting_control").width
+    property int textFieldMinWidth: 75
 
     RowLayout{
         id: mainRow
@@ -208,7 +210,7 @@ Item
                 visible: errorMessage != ""
                 text: errorMessage
                 color: UM.Theme.getColor("error")
-                wrapMode: textInput.wrap
+                wrapMode: Text.Wrap
             }
 
             GridLayout{
@@ -228,7 +230,7 @@ Item
                 UM.TextFieldWithUnit
                 {
                     id: diameterTextField
-                    width: localwidth
+                    Layout.minimumWidth: textFieldMinWidth
                     height: UM.Theme.getSize("setting_control").height
                     unit: "mm"
                     text: spoonDiameter
@@ -253,7 +255,7 @@ Item
                 UM.TextFieldWithUnit
                 {
                     id: lengthTextField
-                    width: localwidth
+                    Layout.minimumWidth: textFieldMinWidth
                     height: UM.Theme.getSize("setting_control").height
                     unit: "mm"
                     text: handleLength
@@ -278,7 +280,7 @@ Item
                 UM.TextFieldWithUnit
                 {
                     id: widthTextField
-                    width: localwidth
+                    Layout.minimumWidth: textFieldMinWidth
                     height: UM.Theme.getSize("setting_control").height
                     unit: "mm"
                     text: handleWidth
@@ -302,7 +304,7 @@ Item
                 UM.TextFieldWithUnit
                 {
                     id: layerTextField
-                    width: localwidth
+                    Layout.minimumWidth: textFieldMinWidth
                     height: UM.Theme.getSize("setting_control").height
                     text: layerCount
                     validator: IntValidator
@@ -332,7 +334,6 @@ Item
             Cura.TertiaryButton
             {
                 id: removeAllButton
-                Layout.fillWidth: true
                 height: UM.Theme.getSize("setting_control").height	
                 text: catalog.i18nc("@button:remove_all", "Remove All")
                 onClicked: triggerAction("removeAllSpoonMesh")
@@ -340,8 +341,7 @@ Item
                         
             Cura.SecondaryButton
             {
-                id: addAllButton
-                Layout.fillWidth: true
+                id: addAutoButton
                 height: UM.Theme.getSize("setting_control").height	
                 text: catalog.i18nc("@label", "Automatic Creation")
                 onClicked: triggerAction("addAutoSpoonMesh")
