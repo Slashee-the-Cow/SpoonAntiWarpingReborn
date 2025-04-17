@@ -249,7 +249,7 @@ Item
                 
                 UM.Label
                 {
-                    text: catalog.i18nc("@controls:label", "Spoon Handle Length")
+                    text: catalog.i18nc("@controls:label", "Handle Length")
                 }
 
                 UM.TextFieldWithUnit
@@ -274,7 +274,7 @@ Item
 
                 UM.Label
                 {
-                    text: catalog.i18nc("@controls:label", "Spoon Handle Width")
+                    text: catalog.i18nc("@controls:label", "Handle Width")
                 }
 
                 UM.TextFieldWithUnit
@@ -343,7 +343,7 @@ Item
             {
                 id: addAutoButton
                 height: UM.Theme.getSize("setting_control").height	
-                text: catalog.i18nc("@label", "Automatic Creation")
+                text: catalog.i18nc("@label", "Add Automatically")
                 onClicked: triggerAction("addAutoSpoonMesh")
             }
         }

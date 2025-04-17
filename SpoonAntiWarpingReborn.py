@@ -7,29 +7,37 @@
 #--------------------------------------------------------------------------------------------------------------------------------------
 # Version history (Reborn version)
 # v1.0.0:
-#   - Removed support for Qt 5 so I don't have to write everything twice. Errr I mean so it's easier to maintain and to avoid making mistakes.
-#   - There was some code in here that I found slightly worrying... and an extremly convuluted way to do an extremely simple thing. It's been banished.
 #   - Refactored the hell out of this thing. If you compared it to the original version, you wouldn't think the two were related. I don't think Git does, either.
+#   - Qt 5 wasn't cute enough to be worth the effort maintaining it. Sorry :( This also means Cura 5.0 is required as a minimum.
 #   - Translated a bunch of variable names from... I'm guessing Klingon? To English.
-#   - Made the "remove all" function less greedy. It might miss things instead of deleting things which aren't spoons. I deem this the lesser of two evils.
+#   - The "remove all" function now steps on tiptoes so as not to break anything. It might leave behind things which are spoons instead of deleting things which aren't spoons.
 #   - Removed the "initial layer speed" setting. Why should a plugin set that?
-#   - Calculating the spoon angle no requires build plate adhesion to be on.
-#   - Took out the post-processing scripts included in this. They weren't very good. And I haven't seen Cura actually find them, either.
+#   - Calculating the spoon angle no requires build plate adhesion to be on. It doesn't have to be off either. It's up to you!
+#   - Removed the bundled post-processing scripts to focus on core functionality and shamelessly self-promoting my own scripts.
 #   - Renamed "Direct Shape" to "Teardrop shape". Dear pedants: I know it's not a proper teardrop shape, but "plectrum" isn't well enough known, however I am open to suggestions.
 #   - Renamed everything internally so you can have this and a different version installed side by side.
 #   - Replaced icon on toolbar with something that doesn't look like a Rorschach test with only incorrect answers.
 #   - Fixed logic that just made me go :/ in some functions. I'm reasonably sure it was wrong. It can be hard to tell.
+#   - Deleted "logic" which seemed to not meet the definition of the term from several functions.
 #   - Implemented input validation on the backend.
-#   - Implemented "robust" amounts of input validation (with live feedback!) on the frontend. You can never have too much input validation, alright?
+#   - Implemented "robust" amounts of input validation (with live feedback!) on the frontend. You can never have too much input validation, right?
 #   - This validation makes it so you can't create spoons with invalid settings. I'm very sorry to the both of you who did that for good reason.
 #   - Added version check and function wrappers to the QML file so the log doesn't get spammed with stuff that got deprecated in 5.7.
 #   - Redid layout of control panel so it should respond better to different screen resolutions or whatever.
-#   - Did I mention refactoring? Becuase I definitely did some of that.
+#   - The control panel UI should now better match the active theme. And if it did it right, no longer has visual glitches.
+#   - Did I mention refactoring? Becuase I definitely did some of that. In the QML file. And more in the Python file.
 #   - Added best workaround I've figured out so far for https://github.com/Ultimaker/Cura/issues/20488
 #   - Rolled my own "notifications" system because I can't use UM.Messages ^^^^^. It's not pretty, but it vaguely works.
 #   - Added checks to prevent spoons being added off the build plate if the ^^^^^ terror above strikes.
-#   - Added completedness to a few functions which aren't used but are *technically* correct, the best kind of correct.
+#   - Added completedness to a few functions which aren't completely used but are *technically* correct, the best kind of correct.
 #   - Put in a bunch of type hints. Whether or not I'm running type checking is unimportant. What's important is that I'm less unprepared for it.
+#   - Spoons will now automatically point at points (no pun intended) spread along the model's edges instead of just the corners.
+#   - Went low-tech in my spoon detection system. Doing it by name. If you trip it up, there's about a 102% chance it was deliberate, so don't submit a bug report.
+#   - No longer uses non-public parts of the Cura API. I've always been a stickler for the rules.
+#   - Lots of calculations are now more precise. It's one of those things where you can't tell it's working, you can tell if it isn't.
+#   - Implemented a legitimate use of seven different functions in a single line of code. That isn't a feature; I'm just bragging.
+#   - Added enough logging to fill the Great Library of Alexandria. Twice. At least.
+#   - Removed existing translation files. It can still be translated, but everything I've changed broke the existing one. Help gladly accepted!
 
 from dataclasses import dataclass
 import os.path
@@ -48,11 +56,9 @@ from cura.Scene.SliceableObjectDecorator import SliceableObjectDecorator
 from cura.Scene.BuildPlateDecorator import BuildPlateDecorator
 from cura.Scene.CuraSceneNode import CuraSceneNode
 from cura.Settings.PerObjectContainerStack import PerObjectContainerStack
-from cura.Settings.SettingOverrideDecorator import SettingOverrideDecorator
 
 
 from UM.Resources import Resources
-from UM.Logger import Logger
 from UM.Message import Message
 from UM.Math.Vector import Vector
 from UM.Math.Polygon import Polygon  # Not strictly needed; not bothering implementing imports just for type checking
@@ -60,9 +66,6 @@ from UM.Tool import Tool
 from UM.Event import Event, MouseEvent
 from UM.Mesh.MeshBuilder import MeshBuilder
 from UM.Settings.SettingInstance import SettingInstance
-from UM.Settings.SettingDefinition import SettingDefinition
-from UM.Settings.DefinitionContainer import DefinitionContainer
-from UM.Settings.ContainerRegistry import ContainerRegistry
 from UM.Settings.InstanceContainer import InstanceContainer
 from UM.Operations.GroupedOperation import GroupedOperation
 from UM.Operations.AddSceneNodeOperation import AddSceneNodeOperation
@@ -72,7 +75,7 @@ from UM.Scene.SceneNode import SceneNode
 from UM.Scene.Iterator.DepthFirstIterator import DepthFirstIterator
 from UM.i18n import i18nCatalog
 
-from .slasheetools import log_debug as log, validate_int, validate_float
+from .slasheetools import log as log, validate_int, validate_float
 
 @dataclass
 class Notification:
@@ -109,7 +112,7 @@ class SpoonAntiWarpingReborn(Tool):
 
         self._inputs_valid: bool = False
 
-        self._default_reference_distance = 5
+        self._default_reference_distance: float = 5
 
         self._are_messages_hidden: bool = False
         self._hidden_messages: list[Message] = []
@@ -165,7 +168,7 @@ class SpoonAntiWarpingReborn(Tool):
     def event(self, event: Event) -> None:
         super().event(event)
         modifiers = QApplication.keyboardModifiers()
-        ctrl_is_active = modifiers & Qt.KeyboardModifier.ControlModifier
+        ctrl_is_active: bool = modifiers & Qt.KeyboardModifier.ControlModifier
 
         if event.type == Event.MousePressEvent and MouseEvent.LeftButton in event.buttons and self._controller.getToolsEnabled():
             if ctrl_is_active:
@@ -297,7 +300,7 @@ class SpoonAntiWarpingReborn(Tool):
             log("d", f"_notification_remove could not find notification with text {notification.text} and ID {notification.id}")
 
     def _notifications_set_property(self) -> None:
-        self._notifications_string = "" + "<br><br>".join(notification.text for notification in self._notifications)
+        self._notifications_string = "<br><br>".join(notification.text for notification in self._notifications)
         self.propertyChanged.emit()
 
     def _check_valid_placement(self, picked_position) -> bool:
@@ -332,13 +335,19 @@ class SpoonAntiWarpingReborn(Tool):
         return True
 
     def _random_name_part(self) -> str:
-        return str(hex(round(random.random()*65536))).lstrip("0x").upper().zfill(4)
+        """Returns a 4 digit hexadecimal number."""
+        # I'll be honest here. The hex parts of the name are mostly to make it
+        # look technical to give the user a "don't mess with this" vibe.
+        return str(hex(round(random.random()*65535))).lstrip("0x").upper().zfill(4)
 
     def _generate_node_name(self) -> str:
         return f"{self._node_name_prefix}{self._random_name_part()}{self._node_name_suffix}"
 
     def _is_spoon_by_name(self, node_name: str) -> bool:
-        return node_name.startswith(self._node_name_prefix) and node_name.endswith(self._node_name_suffix)
+        """Returns a bool of whether a name meets the criteria to belong to a spoon object"""
+        # If I wanted to be really thorough, I'd use a regex to check the hex digits.
+        # But this should be close enough.
+        return node_name.startswith(self._node_name_prefix) and node_name.rstrip("()0123456790 ").endswith(self._node_name_suffix)
 
     def _createSpoonMesh(self, parent: CuraSceneNode, position: Vector):
         node = CuraSceneNode()
@@ -349,12 +358,9 @@ class SpoonAntiWarpingReborn(Tool):
         node.setName(self._generate_node_name())
         node.setSelectable(True)
 
-        # long=Support Height
+        # Offset for height of click to position spoon on plate
         height_offset=position.y
 
-        # This function can be triggered in the middle of a machine change, so do not proceed if the machine change has not done yet.
-        global_container_stack = CuraApplication.getInstance().getGlobalContainerStack()
-        #extruder = global_container_stack.extruderList[int(_id_ex)]
         extruder_stack = CuraApplication.getInstance().getExtruderManager().getActiveExtruderStacks()[0]
         #self._Extruder_count=global_container_stack.getProperty("machine_extruder_count", "value")
 
@@ -365,10 +371,8 @@ class SpoonAntiWarpingReborn(Tool):
         _angle: float = self.defineAngle(parent, position)
         # Logger.log('d', "Info createSpoonMesh Angle --> " + str(_angle))
 
-        # Spoon creation Diameter , Length, Width, Increment angle 10°, length, layer_height_0*1.2
         mesh = self._createSpoon(self._spoon_diameter,self._handle_length,self._handle_width, 10, height_offset, _spoon_height, self._teardrop_shape, _angle)
 
-        # new_transformation = Matrix()
         node.setMeshData(mesh.build())
 
         active_build_plate = CuraApplication.getInstance().getMultiBuildPlateModel().activeBuildPlate
@@ -390,13 +394,6 @@ class SpoonAntiWarpingReborn(Tool):
         new_instance.resetState()  # Ensure that the state is not seen as a user state.
         settings.addInstance(new_instance)
 
-        """definition = stack.getSettingDefinition("spoon_mesh")
-        new_instance = SettingInstance(definition, settings)
-        new_instance.setProperty("value", True)
-        new_instance.resetState()  # Ensure that the state is not seen as a user state.
-        settings.addInstance(new_instance)"""
-
-        #self._op = GroupedOperation()
         # First add node to the scene at the correct position/scale, before parenting, so the Spoon mesh does not get scaled with the parent
         scene_op = GroupedOperation()
         scene_op.addOperation(AddSceneNodeOperation(node, self._controller.getScene().getRoot())) # This one will set the model with the right transformation
@@ -711,6 +708,16 @@ class SpoonAntiWarpingReborn(Tool):
         height = max_y - min_y
         return width, height
 
+    def get_hull_bounds_center(self, hull_points: np.ndarray) -> np.ndarray:
+        """Calculates the center of the bounding box of a set of hull points."""
+        min_x = np.min(hull_points[:, 0])
+        max_x = np.max(hull_points[:, 0])
+        min_y = np.min(hull_points[:, 1])
+        max_y = np.max(hull_points[:, 1])
+        center_x = (min_x + max_x) / 2.0
+        center_y = (min_y + max_y) / 2.0
+        return np.array([center_x, center_y])
+
     def get_corner_scale_factor(self, hull_points: np.ndarray, main_outset: float) -> float:
         """Calculates a scaling factor for corner outset."""
         width, height = self.get_hull_bounds(hull_points)
@@ -764,12 +771,7 @@ class SpoonAntiWarpingReborn(Tool):
 
     def defineAngle(self, node: CuraSceneNode, spoon_position: Vector) -> float:
         """Computes the angle to a point on the convex hull for the spoon to point at."""
-        #hull_scale_factor: float = 4
-
-        result_angle = 0
-        min_length = math.inf
-        # Set on the build plate for distance
-        start_position = Vector(spoon_position.x, 0, spoon_position.z)
+        result_angle = 0  # Needs to be declared at the top in case of an emergency exit.
 
         if not node.callDecoration("isSliceable"):
             log("w", f"{node.getName} is not sliceable")
@@ -810,28 +812,21 @@ class SpoonAntiWarpingReborn(Tool):
         reference_points = self._generate_reference_points(minkowski_points, self._default_reference_distance)
         log("d", f"reference_points = {repr(reference_points)}")
 
-        # Create a smaller Minkowski hull so points on the convex hull have a point close to them perpendicularly
-        spoon_corner_outset = round(spoon_outset * 0.6, 4)
-        minkowski_corner_points = [[spoon_corner_outset, -spoon_corner_outset],
-                                   [-spoon_corner_outset, -spoon_corner_outset],
-                                   [-spoon_corner_outset, spoon_corner_outset],
-                                   [spoon_corner_outset, spoon_corner_outset]]
-        minkowski_corner_square = Polygon(minkowski_corner_points)
-        minkowski_corner_points = object_hull.getMinkowskiHull(minkowski_corner_square).getPoints()
-        log("d", f"minkowski_inner_points = {repr(minkowski_corner_points)}")
+        # Create a convex hull smaller than the Minkowski hull so points on the convex hull have a point close to them perpendicularly
+        scaled_convex_hull_points = Polygon.scale(object_hull, self.get_corner_scale_factor(object_hull.getPoints(), spoon_outset), self.get_hull_bounds_center(object_hull.getPoints()))
+        log("d", f"scaled_convex_hull_points = {repr(scaled_convex_hull_points)}")
 
-        combined_points = np.concatenate((reference_points, minkowski_corner_points), axis=0)
-        #hull_polygon = object_hull.scale(hull_scale_factor)
+        combined_points = np.concatenate((reference_points, scaled_convex_hull_points.getPoints()), axis=0)
 
-        #hull_points = hull_polygon.getPoints()
-        # nb_pt = point[0] / point[1] must be divided by 2
         # Angle Ref for angle / Y Dir
         angle_reference = Vector(0, 0, 1)
-        start_index=0
-        end_index=0
-
+        min_length = math.inf
+        # Set on the build plate for distance
+        start_position = Vector(spoon_position.x, 0, spoon_position.z)
+        closest_point: Vector = None  # Not actually using this at the moment; could be useful in the future
+        
         # Find point closest to start position
-        for index, point in enumerate(combined_points):
+        for point in combined_points:
             # Logger.log('d', "Point : {}".format(point))
             test_position = Vector(point[0], 0, point[1])
             difference_vector = start_position - test_position
@@ -839,47 +834,18 @@ class SpoonAntiWarpingReborn(Tool):
 
             if 0 < length < min_length:
                 min_length = length
-                start_index = index
+                closest_point = test_position
                 angle_vector = difference_vector.normalized()
                 calculated_angle = math.asin(angle_reference.dot(angle_vector))
-                #LeCos = math.acos(ref.dot(unit_vector2))
 
                 if angle_vector.x >= 0:
-                    result_angle = math.pi + calculated_angle  #angle in radian
+                    result_angle = math.pi + calculated_angle
                 else :
                     result_angle = -calculated_angle
 
-            if length == min_length and length > 0:
-                if index > end_index + 1:
-                    start_index = index
-                    end_index = index
-                else:
-                    end_index = index
-
-        # Sometimes automatic creation (rarely from a PickingPass) multiple "closest"
-        if start_index != end_index :
-            # Get the hull point halfway between the two closest indices
-            index = round(start_index + 0.5 * (end_index - start_index))
-            test_position = Vector(combined_points[index][0], 0, combined_points[index][1])
-            difference_vector = start_position - test_position
-            angle_vector = difference_vector.normalized()
-            calculated_angle = math.asin(angle_reference.dot(angle_vector))
-            # LeCos = math.acos(ref.dot(unit_vector2))
-
-            if angle_vector.x >= 0:
-                result_angle = math.pi + calculated_angle  #angle in radian
-            else :
-                result_angle = -calculated_angle
-
-        # Logger.log('d', "Pick_position   : {}".format(calc_position))
-        # Logger.log('d', "Close_position  : {}".format(Select_position))
-        # Logger.log('d', "Unit_vector2    : {}".format(unit_vector2))
-        # Logger.log('d', "Angle Sinus     : {}".format(math.degrees(LeSin)))
-        # Logger.log('d', "Angle Cosinus   : {}".format(math.degrees(LeCos)))
-        # Logger.log('d', "Chose Angle     : {}".format(math.degrees(Angle)))
         return result_angle
 
-    # Automatic creation
+    # Automatic placement around convex hull.
     def addAutoSpoonMesh(self) -> None:
 
         minimum_spoon_gap = self._spoon_diameter * 0.8
@@ -996,7 +962,7 @@ class SpoonAntiWarpingReborn(Tool):
 
     def getNotifications(self) -> str:
         """_notififcations getter for QML"""
-        return self._notifications_string if self._notifications_string else ""
+        return self._notifications_string
 
     def setNotifications(self, value: str) -> None:
         """The QML should never run this. But it probably will.
