@@ -1,0 +1,16 @@
+{
+    "author": {
+        "author_id": "Slashee-the-Cow",
+        "display_name": "Slashee the Cow",
+        "email": "slasheethecow@gmail.com",
+        "website": "http://github.com/Slashee-the-Cow/"
+    },
+    "description": "A tool that lets you add spoons to your model to help stop warping. Originally by 5@xes",
+    "display_name": "Spoon Anti-Warping Reborn",
+    "package_id": "SpoonAntiWarpingReborn",
+    "package_type": "plugin",
+    "package_version": "1.0.0",
+    "sdk_version": 8,
+    "sdk_version_semver": "8.0.0",
+    "website": "https://github.com/Slashee-the-Cow/SpoonAntiWarpingReborn/"
+}
