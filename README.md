@@ -14,7 +14,7 @@ Glad you asked! Just select your object, then click the icon on the toolbar for 
 
 It looks like this --> ![Toolbar icon for Spoon Anti-Warping Reborn](/images/toolbar_icon.webp)
 
-That will open the settings panel, so just select your object and you can just click the **Add Automatically** button and it will add them to the major corners of your model... automatically! If you need more (or you think you can do a better job than a pretty simple computer algorithm) you can just click any part of your model to add a spoon.
+That will open the settings panel, so select your object and you can just click the **Add Automatically** button and it will add them to the major corners of your model... automatically! If you need more (or you think you can do a better job than a pretty simple computer algorithm) you can just click any part of your model to add a spoon.
 
 ## What do the settings do?
 They say "a picture is worth a thousand words". I think you deserve more than a thousand though. So here's a diagram and some extra words to explain it!  
@@ -23,12 +23,16 @@ They say "a picture is worth a thousand words". I think you deserve more than a 
 - **Handle Length:** The distance from the model to the circular part of the spoon (blue arrow).
 - **Handle Width:** How wide the handle is, side to side (red arrow). Wider handle gives you a better hold but is a little harder to remove after the print. Experiment to see what works best for you.
 - **Number of layers:** Add a couple of extra layers to your spoon to make sure it's grabbing more than just the base of your model. Like the handle width, higher = better hold, but harder to remove. You probably shouldn't need more than about three layers but experiment! (Maybe I'm wrong. I am sometimes.)
+- **Print order:** Print spoons first to give your model a "template" to fit into and adhere to. Print spoons last to... I'm not a spoonologist, but I'm sure there's a good reason. Or just leave it unchanged and let Cura do its thing.
 - **Teardrop shape:** Don't worry about the handle too much - just extend straight out into the circular part: ![Image of "Teardrop shape" style spoon](/images/teardrop_shape.webp)
 
 ## Known Issues
 - Due to a [bug in Cura](https://github.com/Ultimaker/Cura/issues/20488) it can try and place spoons in the wrong places sometimes. I've put in the best workarounds I know about at this point and it will automatically delete any spoons that would be placed off the build plate.
+- Print ordering uses settings from the first extruder. It might not work properly if different extruders have different settings.
 
 ## Version History
+### 1.1.0:
+**Print ordering!** Choose to print spoons before objects, after objects or just leave it unchanged and let Cura do the thinking. Shouldn't require changing any print settings. Intelligently handles travels to save time.
 ### 1.0.0: Initial release
 #### What's new?
 - Spoons will now automatically point at intervals of the shape's outline, not just the nearest corner.

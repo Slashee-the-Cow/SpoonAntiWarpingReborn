@@ -26,8 +26,10 @@ jobs:
           cp LICENSE ../build/
           cp plugin.json ../build/
           cp README.md ../build/
+          cp script_helpers.py ../build/
           cp slasheetools.py ../build/
           cp SpoonAntiWarpingReborn.py ../build/
+          cp SpoonOrder.py ../build/
           cp tool_icon.svg ../build/
       - uses: fieldOfView/cura-plugin-packager-action@main
         with:

@@ -10,6 +10,9 @@
 # - validate_int():
 #       Tests a str value to make sure it casts to an int fine and optionally
 #       constrain it to upper or lower bounds.
+# - validate_float():
+#       Tests a str value to make sure it casts to an float fine and optionally
+#       constrain it to upper or lower bounds.
 #------------
 # v1: log() and log_debug() implementations including "dd" for debug that should show up anyway.
 
@@ -41,7 +44,10 @@ def log_debug(level: str, message: str) -> None:
 
 def validate_int(value: str, minimum: int | None = None, maximum: int | None = None,
                 clamp: bool = False, default: int | None = None) -> int | None:
-    """Safely casts a str to an int and optionally keeps it within bounds"""
+    """Safely casts a str to an int and optionally keeps it within bounds.
+    Designed to be used on properties from QML files, but don't let that
+    stop you from doing other things.
+    """
     try:
         int_value = int(value)
     except ValueError:
@@ -58,7 +64,10 @@ def validate_int(value: str, minimum: int | None = None, maximum: int | None = N
 
 def validate_float(value: str, minimum: float = -math.inf, maximum: float = math.inf,
                 clamp: bool = False, default: float | None = None) -> float | None:
-    """Safely casts a str to a float and optionally keeps it within bounds"""
+    """Safely casts a str to a float and optionally keeps it within bounds.
+    Designed to be used on properties from QML files, but don't let that
+    stop you from doing other things.
+    """
     try:
         float_value = float(value)
     except ValueError:

@@ -189,6 +189,7 @@ Item
         teardropShape = getProperty("TeardropShape")
         teardrop_checkbox.checked = teardropShape
         Qt.callLater(validateInputs)
+        printOrderBox.currentIndex = printOrderBox.find(getProperty("PrintOrder"))
     }
 	
 	property int localwidth: UM.Theme.getSize("setting_control").width
@@ -316,6 +317,23 @@ Item
                     onTextChanged: {
                         layerCount = text
                         Qt.callLater(validateInputs)
+                    }
+                }
+
+                UM.Label
+                {
+                    text: catalog.i18nc("@controls:label", "Print order")
+                }
+
+                Cura.ComboBox
+                {
+                    id: printOrderBox
+                    Layout.minimumWidth: textFieldMinWidth
+                    Layout.minimumHeight: UM.Theme.getSize("setting_control").height
+                    //text: layerCount
+                    model: ["Unchanged", "Spoons first", "Spoons last"]
+                    onActivated: {
+                        setProperty("PrintOrder", currentText)
                     }
                 }
                 
