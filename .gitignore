@@ -1,2 +1,10 @@
+# Python things
+__pycache__/
+
 # Logo work file
+*.afdesign
+
+# Test files
+modified*
+test*
 *.afdesign*

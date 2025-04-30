@@ -6,6 +6,11 @@
 # https://github.com/5axes/SpoonAntiWarping
 #--------------------------------------------------------------------------------------------------------------------------------------
 # Version history (Reborn version)
+# v1.1.0:
+#   - Added print order setting built into the plugin that allows you print all spoons before or after models. Doesn't require changing any print settings to work.
+#       Gets rid of unnessecary travel moves to potentially the wrong place. Doesn't require setting up (other than picking something from a dropdown).
+#   - Second bullet point to make it not seem like such a minor update. That thing was **a lot** of work.
+#   - Added GUI control for print order script. Look, this is a big deal, alright? I need to pad the changelog out a bit.
 # v1.0.0:
 #   - Refactored the hell out of this thing. If you compared it to the original version, you wouldn't think the two were related. I don't think Git does, either.
 #   - Qt 5 wasn't cute enough to be worth the effort maintaining it. Sorry :( This also means Cura 5.0 is required as a minimum.
@@ -76,6 +81,7 @@ from UM.Scene.Iterator.DepthFirstIterator import DepthFirstIterator
 from UM.i18n import i18nCatalog
 
 from .slasheetools import log as log, validate_int, validate_float
+from .SpoonOrder import SpoonOrder
 
 @dataclass
 class Notification:
@@ -132,7 +138,9 @@ class SpoonAntiWarpingReborn(Tool):
 
         self._application: CuraApplication = CuraApplication.getInstance()
 
-        self.setExposedProperties("SpoonDiameter", "HandleLength", "HandleWidth", "LayerCount", "TeardropShape", "InputsValid", "Notifications")
+        self._order_script = SpoonOrder()
+
+        self.setExposedProperties("SpoonDiameter", "HandleLength", "HandleWidth", "LayerCount", "TeardropShape", "InputsValid", "Notifications", "PrintOrder")
 
         # Note: if the selection is cleared with this tool active, there is no way to switch to
         # another tool than to reselect an object (by clicking it) because the tool buttons in the
@@ -153,6 +161,7 @@ class SpoonAntiWarpingReborn(Tool):
         self._preferences.addPreference("spoonawreborn/handle_length", 2)
         self._preferences.addPreference("spoonawreborn/handle_width", 2)
         self._preferences.addPreference("spoonawreborn/layer_count", 1)
+        self._preferences.addPreference("spoonawreborn/print_order", "Unchanged")
         self._preferences.addPreference("spoonawreborn/teardrop_shape", False)
 
 
@@ -160,10 +169,14 @@ class SpoonAntiWarpingReborn(Tool):
         self._handle_length = float(self._preferences.getValue("spoonawreborn/handle_length"))
         self._handle_width = float(self._preferences.getValue("spoonawreborn/handle_width"))
         self._layer_count = int(self._preferences.getValue("spoonawreborn/layer_count"))
+        self._print_order = self._preferences.getValue("spoonawreborn/print_order")
         self._teardrop_shape = bool(self._preferences.getValue("spoonawreborn/teardrop_shape"))
 
         self._last_picked_node: SceneNode = None
         self._last_event: Event = None
+
+        # Connect order script to write start
+        self._application.getOutputDeviceManager().writeStarted.connect(self._run_spoon_order)
 
     def event(self, event: Event) -> None:
         super().event(event)
@@ -845,8 +858,8 @@ class SpoonAntiWarpingReborn(Tool):
 
         return result_angle
 
-    # Automatic placement around convex hull.
     def addAutoSpoonMesh(self) -> None:
+        """Automatically adds spoons to points on the convex hull of the selected object"""
 
         minimum_spoon_gap = self._spoon_diameter * 0.8
 
@@ -899,6 +912,25 @@ class SpoonAntiWarpingReborn(Tool):
                 if difference_length >= minimum_spoon_gap or first_to_last_distance >= minimum_spoon_gap:
                     self._createSpoonMesh(node, point_position)
                     last_spoon_position = point_position
+
+    def _run_spoon_order(self, output_device) -> None:
+        log("d", f"_run_spoon_order running with _print_order of {self._print_order}")
+        match self._print_order:
+            case "Unchanged":
+                return
+            case "Spoons first":
+                self._order_script.spoons_first = True
+            case "Spoons last":
+                self._order_script.spoons_first = False
+            case _:
+                log("w", "_run_spoon_order got unmatched string for _print_order")
+        
+        scene = self._application.getController().getScene()
+        gcode_dict = getattr(scene, "gcode_dict", {})
+        for plate_id in gcode_dict:
+            for layer in gcode_dict[plate_id]:
+                log("i", layer.replace("\n",","))
+            gcode_dict[plate_id] = self._order_script.execute(gcode_dict[plate_id])
 
     def getSpoonDiameter(self) -> float:
         """_spoon_diameter setter for QML"""
@@ -969,3 +1001,15 @@ class SpoonAntiWarpingReborn(Tool):
         So it does nothing."""
         log("d", f"Something ran setNotifications with {value}")
         return
+
+    def getPrintOrder(self) -> str:
+        """_print_order getter for QML"""
+        log("d", f"Getting Print Order of {self._print_order}")
+        return self._print_order
+
+    def setPrintOrder(self, value: str) -> None:
+        """_print_order setter for QML"""
+        log("d", f"Setting Print Order to {value}")
+        self._print_order = value
+        self._preferences.setValue("spoonawreborn/print_order", self._print_order)
+        self.propertyChanged.emit()
