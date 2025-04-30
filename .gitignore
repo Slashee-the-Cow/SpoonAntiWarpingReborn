@@ -7,3 +7,4 @@ __pycache__/
 # Test files
 modified*
 test*
+*.afdesign*
