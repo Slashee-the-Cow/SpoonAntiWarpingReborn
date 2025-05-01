@@ -257,7 +257,7 @@ class SpoonOrder:
                             if layer_index < (len(data) - 1) and self.target_name in data[layer_index + 1]:
                                 new_last_section: list[str] = []
                                 for last_section_line in current_section.lines:
-                                    if last_section_line.startswith(("G0", "G1")):
+                                    if last_section_line.startswith(("G0", "G1", "G2", "G3")):
                                         new_last_section.append(f";{last_section_line}")
                                     else:
                                         new_last_section.append(last_section_line)
@@ -274,7 +274,7 @@ class SpoonOrder:
                             # We need to get the layer Z as the lowest Z value
                             log("d", "SpoonOrder getting Z value from lowest on layer")
                             for z_line in layer_lines:
-                                if z_line.startswith(("G0", "G1", ";G0", ";G1")):
+                                if z_line.startswith(("G0", "G1", "G2", "G3", ";G0", ";G1", ";G2", ";G3")):
                                     if "Z" in z_line.lstrip(";"):
                                         new_z = get_value(z_line.lstrip(";"), "Z")
                                         if new_z is not None:

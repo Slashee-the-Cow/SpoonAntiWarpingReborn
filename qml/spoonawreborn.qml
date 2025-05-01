@@ -57,7 +57,6 @@ Item
         }
     }
 
-
     function getProperty(propertyName){
         if(isVersion57OrGreater()){
             return UM.Controller.properties.getValue(propertyName);
@@ -330,7 +329,6 @@ Item
                     id: printOrderBox
                     Layout.minimumWidth: textFieldMinWidth
                     Layout.minimumHeight: UM.Theme.getSize("setting_control").height
-                    //text: layerCount
                     model: ["Unchanged", "Spoons first", "Spoons last"]
                     onActivated: {
                         setProperty("PrintOrder", currentText)
