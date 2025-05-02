@@ -189,6 +189,7 @@ Item
         teardrop_checkbox.checked = teardropShape
         Qt.callLater(validateInputs)
         printOrderBox.currentIndex = printOrderBox.find(getProperty("PrintOrder"))
+        autoDensityBox.currentIndex = autoDensityBox.find(getProperty("AutoDensity"))
     }
 	
 	property int localwidth: UM.Theme.getSize("setting_control").width
@@ -298,7 +299,7 @@ Item
                 
                 UM.Label
                 {
-                    text: catalog.i18nc("@controls:label", "Number of layers")
+                    text: catalog.i18nc("@controls:label", "Number of Layers")
                 }
 
                 UM.TextFieldWithUnit
@@ -321,7 +322,7 @@ Item
 
                 UM.Label
                 {
-                    text: catalog.i18nc("@controls:label", "Print order")
+                    text: catalog.i18nc("@controls:label", "Print Order")
                 }
 
                 Cura.ComboBox
@@ -338,7 +339,7 @@ Item
                 UM.CheckBox {
                     id: teardrop_checkbox
                     Layout.columnSpan: 2
-                    text: catalog.i18nc("@option:check","Teardrop shape")
+                    text: catalog.i18nc("@option:check","Teardrop Shape")
                     checked: teardropShape
                     onClicked: {
                         teardropShape = checked
@@ -361,6 +362,29 @@ Item
                 height: UM.Theme.getSize("setting_control").height	
                 text: catalog.i18nc("@label", "Add Automatically")
                 onClicked: triggerAction("addAutoSpoonMesh")
+            }
+
+            RowLayout
+            {
+                spacing: UM.theme.getSize("default_margin").width
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignLeft | Qt.AlignTop
+                
+                UM.Label
+                {
+                    text: catalog.i18nc("@labels:auto_density", "Automatic Placement Density")
+                }
+
+                Cura.ComboBox
+                {
+                    id: autoDensityBox
+                    Layout.minimumWidth: textFieldMinWidth
+                    Layout.minimumHeight: UM.Theme.getSize("setting_control").height
+                    model: ["Dense", "Normal", "Sparse"]
+                    onActivated: {
+                        setProperty("AutoDensity", currentText)
+                    }
+                }
             }
         }
         UM.Label {

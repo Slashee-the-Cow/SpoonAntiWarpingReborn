@@ -212,7 +212,7 @@ class SpoonOrder:
                         section_start_g0_count = 0
                         # This isn't changing any lines, just examining what we've got.
                         for start_line in current_section.lines[:section_extrude_start_index]:
-                            if start_line.startswith("G0"):
+                            if start_line.startswith("G0") or (start_line.startswith("G2", "G3") and "E" not in start_line):
                                 section_start_g0_count += 1
                                
                                 start_line_x = get_value(start_line, "X")
@@ -221,7 +221,7 @@ class SpoonOrder:
                                     current_section.start_x = start_line_x
                                 if start_line_y:
                                     current_section.start_y = start_line_y
-                            elif start_line.startswith("G1"):
+                            elif start_line.startswith("G1") or (start_line.startswith("G2", "G3") and "E" in start_line):
                                 if not current_section.start_has_zdown:
                                     current_section.start_has_zdown = is_z_hop_line(start_line, self.hop_speed)
                                 if not current_section.start_has_prime:

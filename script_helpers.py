@@ -200,7 +200,7 @@ def get_start_g0_xy_coords(section: list[str]) -> tuple[float, float] | None:
         elif line.startswith(("G2", "G3", ";G2", ";G3")) and "E" in line:
             if first_x is None or first_y is None:
                 return None
-        elif ("G0" or ";G0") in line:
+        elif line.strip(";").startswith("G0") or (line.lstrip(";").startswith("G2", "G3") and "E" not in line):
             line = line.lstrip(":")
             if first_x is None:
                 first_x = get_value(line, "X")

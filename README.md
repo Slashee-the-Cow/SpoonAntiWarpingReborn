@@ -22,15 +22,22 @@ They say "a picture is worth a thousand words". I think you deserve more than a 
 - **Spoon Diameter:** The diameter of the circular part of the spoon (highlighted in green).
 - **Handle Length:** The distance from the model to the circular part of the spoon (blue arrow).
 - **Handle Width:** How wide the handle is, side to side (red arrow). Wider handle gives you a better hold but is a little harder to remove after the print. Experiment to see what works best for you.
-- **Number of layers:** Add a couple of extra layers to your spoon to make sure it's grabbing more than just the base of your model. Like the handle width, higher = better hold, but harder to remove. You probably shouldn't need more than about three layers but experiment! (Maybe I'm wrong. I am sometimes.)
-- **Print order:** Print spoons first to give your model a "template" to fit into and adhere to. Print spoons last to... I'm not a spoonologist, but I'm sure there's a good reason. Or just leave it unchanged and let Cura do its thing.
-- **Teardrop shape:** Don't worry about the handle too much - just extend straight out into the circular part: ![Image of "Teardrop shape" style spoon](/images/teardrop_shape.webp)
+- **Number of Layers:** Add a couple of extra layers to your spoon to make sure it's grabbing more than just the base of your model. Like the handle width, higher = better hold, but harder to remove. You probably shouldn't need more than about three layers but experiment! (Maybe I'm wrong. I am sometimes.)
+- **Print Order:** Print spoons first to give your model a "template" to fit into and adhere to. Print spoons last to... I'm not a spoonologist, but I'm sure there's a good reason. Or just leave it unchanged and let Cura do its thing.
+- **Teardrop Shape:** Don't worry about the handle too much - just extend straight out into the circular part: ![Image of "Teardrop shape" style spoon](/images/teardrop_shape.webp)
+- **Automatic Placement Density:** Adjusts the minimum gap between spoons in crowded places (like curves).
 
 ## Known Issues
 - Due to a [bug in Cura](https://github.com/Ultimaker/Cura/issues/20488) it can try and place spoons in the wrong places sometimes. I've put in the best workarounds I know about at this point and it will automatically delete any spoons that would be placed off the build plate.
 - Print ordering uses settings from the first extruder. It might not work properly if different extruders have different settings.
 
 ## Version History
+### 1.1.1:
+- Automatic spoon placement will now follow the base of the model touching the build plate rather than the overall outline.
+- If a model has multiple separate areas touching the build plate, automatic spoon placement will now run for all of them individually.
+- New "Automatic Placement Density" setting allows you to increase the spacing between spoons on areas like curves to reduce chances of overlaps.
+- Print order function now takes G2/G3 arc moves into account for determining position and extruder position.
+- Fixed a logic bug that could cause spoons to be placed too closely if they were the first and last points on an object.
 ### 1.1.0:
 **Print ordering!** Choose to print spoons before objects, after objects or just leave it unchanged and let Cura do the thinking. Shouldn't require changing any print settings. Intelligently handles travels to save time.
 ### 1.0.0: Initial release
