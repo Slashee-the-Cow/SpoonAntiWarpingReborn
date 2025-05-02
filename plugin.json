@@ -1,7 +1,7 @@
 {
     "name": "Spoon Anti-Warping Reborn",
     "author": "Slashee the Cow",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "description": "Add \"spoons\" to parts of models to help prevent warping. Originally by 5@xes.",
     "i18n-catalog": "spoonawreborn",
     "api": 8,
