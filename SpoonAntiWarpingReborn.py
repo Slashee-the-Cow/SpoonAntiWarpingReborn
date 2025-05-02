@@ -1012,7 +1012,8 @@ class SpoonAntiWarpingReborn(Tool):
                     first_to_last_distance = (first_point - point_position).length() if i == len(shape_points) - 1 else 0
 
                     # Make sure not to place spoons too close together
-                    if (first_to_last_distance == 0  and difference_length >= minimum_gap) or first_to_last_distance >= minimum_gap:
+                    if (first_to_last_distance == 0 and difference_length >= minimum_gap) or (first_to_last_distance >= minimum_gap and difference_length >= minimum_gap):
+
                         self._createSpoonMesh(node, point_position, shape)
                         last_spoon_position = point_position
 
