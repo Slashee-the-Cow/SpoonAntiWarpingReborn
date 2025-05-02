@@ -131,9 +131,9 @@ def section_ends_z_hopped(section: list[str]) -> bool:
 
 def is_extrusion_move(line: str):
     """Checks to see if a line is an extrusion move
-    (Starts with G1, contains E property as well as X and/or Y)
+    (Starts with G1, G2 or G3, contains E property as well as X and/or Y)
     """
-    return(line.startswith("G1")
+    return(line.startswith(("G1", "G2", "G3"))
            and "E" in line
            and ("X" in line or "Y" in line))
 
@@ -141,7 +141,7 @@ def get_last_xy_coords(section: list[str]) -> tuple[float, float] | None:
     last_x = None
     last_y = None
     for line in reversed(section):
-        if line.startswith(("G0", "G1", ";G0", ";G1")):
+        if line.startswith(("G0", "G1", "G2", "G3", ";G0", ";G1", ";G2", ";G3")):
             line = line.lstrip(";")
             if last_x is None:
                 if get_value(line, "X") is not None:
@@ -159,7 +159,8 @@ def get_last_xyz_coords(section: list[str]) -> tuple[float, float, float] | None
     last_y: float = None
     last_z: float = None
     for line in reversed(section):
-        if line.startswith(("G0", "G1", ";G0", ";G1")):
+        if line.startswith(("G0", "G1", "G2", "G3", ";G0", ";G1", ";G2", ";G3")):
+            line = line.lstrip(";")
             if last_x is None and "X" in line:
                 last_x = get_value(line, "X")
             if last_y is None and "Y" in line:
@@ -181,14 +182,14 @@ def get_start_g0_z(section: list[str]) -> float | None:
         if line.startswith(("G0", ";G0")):
             if "Z" in line:
                 return get_value(line, "Z")
-        elif line.startswith(("G1", ";G1")):
+        elif line.startswith(("G1", "G2", "G3", ";G1", ";G2", ";G3")):
             return None
     return None
 
 
 def get_start_g0_xy_coords(section: list[str]) -> tuple[float, float] | None:
     """Get X/Y coordinates from initial travel moves in a section.
-    Bails if it encounters a G1 before having valid X and Y coordinates
+    Bails if it encounters a G1 (or an extruwsion G2/G3) before having valid X and Y coordinates
     """
     first_x = None
     first_y = None
@@ -196,7 +197,11 @@ def get_start_g0_xy_coords(section: list[str]) -> tuple[float, float] | None:
         if ("G1" or ";G1") in line and ("X" in line or "Y" in line):
             if first_x is None or first_y is None:
                 return None
-        if ("G0" or ";G0") in line:
+        elif line.startswith(("G2", "G3", ";G2", ";G3")) and "E" in line:
+            if first_x is None or first_y is None:
+                return None
+        elif line.strip(";").startswith("G0") or (line.lstrip(";").startswith("G2", "G3") and "E" not in line):
+            line = line.lstrip(":")
             if first_x is None:
                 first_x = get_value(line, "X")
             if first_y is None:

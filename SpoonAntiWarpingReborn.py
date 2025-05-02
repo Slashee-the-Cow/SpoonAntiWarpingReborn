@@ -6,6 +6,12 @@
 # https://github.com/5axes/SpoonAntiWarping
 #--------------------------------------------------------------------------------------------------------------------------------------
 # Version history (Reborn version)
+# v1.1.1:
+#   - Automatic spoon placement now follows the part of model that touches the build plate. Remarkably this took me less time than manually adding/removing spoons to about four complex objects with the original behaviour.
+#   - If a model has separate areas on the build plate, they are now individually run through automatic placement. Reduces instances of monitor punching by approximately 93% compared to the original behaviour.
+#   - Print order function now takes G2/G3 arc moves into account when getting positions and extruder values. It will never generate them because that math is beyond me.
+#   - Setting to control density (minimum distance between spoons in crowded places like corners). Sometimes overlap parties aren't as fun as they sound.
+#   - Fixed bug in logic that meant two spoons could be placed closely together if they were the first and last points in the convex hull. Sorry, my bad.
 # v1.1.0:
 #   - Added print order setting built into the plugin that allows you print all spoons before or after models. Doesn't require changing any print settings to work.
 #       Gets rid of unnessecary travel moves to potentially the wrong place. Doesn't require setting up (other than picking something from a dropdown).
@@ -50,6 +56,8 @@ import math
 import random  # To make node names reasonably unique
 
 import numpy as np
+from scipy.spatial import ConvexHull
+import trimesh
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QApplication
 
@@ -69,6 +77,7 @@ from UM.Math.Vector import Vector
 from UM.Math.Polygon import Polygon  # Not strictly needed; not bothering implementing imports just for type checking
 from UM.Tool import Tool
 from UM.Event import Event, MouseEvent
+from UM.Mesh.MeshData import MeshData, calculateNormalsFromIndexedVertices
 from UM.Mesh.MeshBuilder import MeshBuilder
 from UM.Settings.SettingInstance import SettingInstance
 from UM.Settings.InstanceContainer import InstanceContainer
@@ -140,7 +149,7 @@ class SpoonAntiWarpingReborn(Tool):
 
         self._order_script = SpoonOrder()
 
-        self.setExposedProperties("SpoonDiameter", "HandleLength", "HandleWidth", "LayerCount", "TeardropShape", "InputsValid", "Notifications", "PrintOrder")
+        self.setExposedProperties("SpoonDiameter", "HandleLength", "HandleWidth", "LayerCount", "TeardropShape", "InputsValid", "Notifications", "PrintOrder", "AutoDensity")
 
         # Note: if the selection is cleared with this tool active, there is no way to switch to
         # another tool than to reselect an object (by clicking it) because the tool buttons in the
@@ -163,14 +172,16 @@ class SpoonAntiWarpingReborn(Tool):
         self._preferences.addPreference("spoonawreborn/layer_count", 1)
         self._preferences.addPreference("spoonawreborn/print_order", "Unchanged")
         self._preferences.addPreference("spoonawreborn/teardrop_shape", False)
+        self._preferences.addPreference("spoonawreborn/auto_density", "Dense")
 
 
         self._spoon_diameter = float(self._preferences.getValue("spoonawreborn/spoon_diameter"))
         self._handle_length = float(self._preferences.getValue("spoonawreborn/handle_length"))
         self._handle_width = float(self._preferences.getValue("spoonawreborn/handle_width"))
         self._layer_count = int(self._preferences.getValue("spoonawreborn/layer_count"))
-        self._print_order = self._preferences.getValue("spoonawreborn/print_order")
+        self._print_order: str = self._preferences.getValue("spoonawreborn/print_order")
         self._teardrop_shape = bool(self._preferences.getValue("spoonawreborn/teardrop_shape"))
+        self._auto_density: str = self._preferences.getValue("spoonawreborn/auto_density")
 
         self._last_picked_node: SceneNode = None
         self._last_event: Event = None
@@ -362,8 +373,9 @@ class SpoonAntiWarpingReborn(Tool):
         # But this should be close enough.
         return node_name.startswith(self._node_name_prefix) and node_name.rstrip("()0123456790 ").endswith(self._node_name_suffix)
 
-    def _createSpoonMesh(self, parent: CuraSceneNode, position: Vector):
+    def _createSpoonMesh(self, parent: CuraSceneNode, position: Vector, shape: Polygon = None):
         node = CuraSceneNode()
+        log("d", f"_createSpoonMesh has a shape of {shape}")
 
         # local_transformation = parent.getLocalTransformation()
         # Logger.log('d', "Parent local_transformation --> " + str(local_transformation))
@@ -381,7 +393,7 @@ class SpoonAntiWarpingReborn(Tool):
         _layer_height: float = extruder_stack.getProperty("layer_height", "value")
         _spoon_height: float = (_layer_height_0 * 1.2) + (_layer_height * (self._layer_count -1) )
 
-        _angle: float = self.defineAngle(parent, position)
+        _angle: float = self.defineAngle(parent, position, shape)
         # Logger.log('d', "Info createSpoonMesh Angle --> " + str(_angle))
 
         mesh = self._createSpoon(self._spoon_diameter,self._handle_length,self._handle_width, 10, height_offset, _spoon_height, self._teardrop_shape, _angle)
@@ -517,7 +529,7 @@ class SpoonAntiWarpingReborn(Tool):
             circle_start = [0, half_handle_width]
             circle_center = [(circle_radius + handle_length), 0]
             tangent_points = self._tangential_point_on_circle(circle_center, circle_radius, circle_start)
-            log("d", f"Tangent points: {tangent_points}")
+            #log("d", f"Tangent points: {tangent_points}")
             vertex_count = 20
             vertices = [ # 5 faces with 4 corners each
                 [-half_handle_width, negative_height,  half_handle_width], [-half_handle_width,  max_y,  half_handle_width], [ tangent_points[0][0],  max_y,  tangent_points[0][1]], [ tangent_points[0][0], negative_height,  tangent_points[0][1]],
@@ -782,7 +794,7 @@ class SpoonAntiWarpingReborn(Tool):
         combined_points = np.concatenate(all_edge_points, axis=0)
         return combined_points
 
-    def defineAngle(self, node: CuraSceneNode, spoon_position: Vector) -> float:
+    def defineAngle(self, node: CuraSceneNode, spoon_position: Vector, shape: Polygon = None) -> float:
         """Computes the angle to a point on the convex hull for the spoon to point at."""
         result_angle = 0  # Needs to be declared at the top in case of an emergency exit.
 
@@ -790,19 +802,27 @@ class SpoonAntiWarpingReborn(Tool):
             log("w", f"{node.getName} is not sliceable")
             return result_angle
 
+        object_hull = None
+        object_points = None
         # hull_polygon = node.callDecoration("getAdhesionArea")
         # hull_polygon = node.callDecoration("getConvexHull")
         # hull_polygon = node.callDecoration("getConvexHullBoundary")
         # hull_polygon = node.callDecoration("_compute2DConvexHull")
-        object_hull: Polygon = node.callDecoration("getConvexHullBoundary")
-        if object_hull is None:
-            object_hull = node.callDecoration("getConvexHull")
+        if shape is not None:
+            object_hull = shape
+            object_points = shape.getPoints()
+            log("d", f"defineAngle getting hull {object_hull} and points {object_points} from shape")
+        elif object_points is None:
+            log("d", f"defineAngle is using node because shape is {shape}")
+            object_hull: Polygon = node.callDecoration("getConvexHullBoundary")
+            if object_hull is None:
+                object_hull = node.callDecoration("getConvexHull")
 
-        if not object_hull or object_hull.getPoints is None:
-            log("w", f"{node.getName()} cannot be calculated because a convex hull cannot be generated.")
-            return result_angle
+            if not object_hull or object_hull.getPoints() is None:
+                log("w", f"{node.getName()} cannot be calculated because a convex hull cannot be generated.")
+                return result_angle
 
-        object_points = object_hull.getPoints()
+            object_points = object_hull.getPoints()
 
         log("d", f"object_points = {object_points}")
 
@@ -817,17 +837,17 @@ class SpoonAntiWarpingReborn(Tool):
                             [spoon_outset, spoon_outset]]
 
         minkowski_square = Polygon(minkowski_square_points)
-        log("d", f"minkowski_square = {repr(minkowski_square)}")
+        #log("d", f"minkowski_square = {repr(minkowski_square)}")
 
         minkowski_points = object_hull.getMinkowskiHull(minkowski_square).getPoints()
-        log("d", f"minkowski_hull_points = {repr(minkowski_points)}")
+        #log("d", f"minkowski_hull_points = {repr(minkowski_points)}")
 
         reference_points = self._generate_reference_points(minkowski_points, self._default_reference_distance)
-        log("d", f"reference_points = {repr(reference_points)}")
+        #log("d", f"reference_points = {repr(reference_points)}")
 
         # Create a convex hull smaller than the Minkowski hull so points on the convex hull have a point close to them perpendicularly
         scaled_convex_hull_points = Polygon.scale(object_hull, self.get_corner_scale_factor(object_hull.getPoints(), spoon_outset), self.get_hull_bounds_center(object_hull.getPoints()))
-        log("d", f"scaled_convex_hull_points = {repr(scaled_convex_hull_points)}")
+        #log("d", f"scaled_convex_hull_points = {repr(scaled_convex_hull_points)}")
 
         combined_points = np.concatenate((reference_points, scaled_convex_hull_points.getPoints()), axis=0)
 
@@ -858,10 +878,37 @@ class SpoonAntiWarpingReborn(Tool):
 
         return result_angle
 
+    # Used to compare union convex hulls to allow for floating point inaccuracies
+    def _compare_polygons_with_tolerance(self, poly1: Polygon, poly2: Polygon, tolerance=1e-6):
+        points1 = poly1.getPoints()
+        points2 = poly2.getPoints()
+
+        if points1 is None and points2 is None:
+            return True
+        if points1 is None or points2 is None or len(points1) != len(points2):
+            return False
+
+        # Sort the points before comparison to handle different vertex order
+        sorted_points1 = np.sort(points1, axis=0)
+        sorted_points2 = np.sort(points2, axis=0)
+
+        return np.allclose(sorted_points1, sorted_points2, atol=tolerance, rtol=tolerance)
+
     def addAutoSpoonMesh(self) -> None:
         """Automatically adds spoons to points on the convex hull of the selected object"""
+        log("d", "addAutoSpoonMesh running")
 
-        minimum_spoon_gap = self._spoon_diameter * 0.8
+        # Minimum gap between automatic spoons as a fraction of spoon diameter
+        minimum_spoon_gap: float = 0.8
+        match self._auto_density:
+            case "Dense":
+                minimum_spoon_gap = 0.8
+            case "Normal":
+                minimum_spoon_gap = 0.9
+            case "Sparse":
+                minimum_spoon_gap = 1.0
+            case _:
+                minimum_spoon_gap = 0.8
 
         nodes_list = self._getAllSelectedNodes()
         if not nodes_list:
@@ -878,40 +925,178 @@ class SpoonAntiWarpingReborn(Tool):
                 continue
             # and Selection.isSelected(node)
             # Logger.log('d', "Mesh : {}".format(node.getName()))
+            log("d", "addAutoSpoonMesh: node just passed checks")
 
-            hull_polygon: Polygon = node.callDecoration("getConvexHullBoundary")
-            if hull_polygon is None:
-                hull_polygon = node.callDecoration("getConvexHull")
 
-            if not hull_polygon or not hull_polygon.isValid():
-                log("w", f"Object {node.getName()} cannot be calculated because it has no convex hull.")
-                continue
+            try:
+                shapes = self._get_base_convex_hulls(node)
+            except Exception as e:
+                log("d", f"Exception in _get_base_convex_hulls: {e}")
+            if shapes is not None:
+                for shape in shapes:
+                    log("d", f"addAutoSpoonMesh: just got base convex hulls {shape}")
 
-            points = hull_polygon.getPoints()
+                # Filter out any hulls completely inside one another
+                if len(shapes) > 1:
+                    filtered_hulls = []
+                    log("d", "Filtering hulls")
+                    true_element = True
+                    false_element = False
+                    is_base = [true_element for _ in range(len(shapes))]
+                    is_child = [false_element for _ in range(len(shapes))]
+                    for a, hull_a in enumerate(shapes):
+                        for b, hull_b in enumerate(shapes):
+                            if a == b:
+                                continue
+                            if is_child[a] or is_child[b]:
+                                continue
+                            try:
+                                union_hull = hull_a.unionConvexHulls(hull_b)
+                            except Exception as e:
+                                log("e", f"Couldn't create union hull for overlap test: {e}")
+                            log("d", f"union_hull = {union_hull}")
+                            if self._compare_polygons_with_tolerance(union_hull, hull_a):
+                                # b is fully contained within a
+                                is_base[b] = False
+                                is_child[b] = True
+                            if self._compare_polygons_with_tolerance(union_hull, hull_b):
+                                # a is fully contained within b
+                                is_base[a] = False
+                                is_child[a] = True
+                                break
+                    log("d", f"Looped through hulls, is_base = {is_base}, is_child = {is_child}")
+                    for i, hull in enumerate(shapes):
+                        if is_base[i]:
+                            filtered_hulls.append(hull)
+                    shapes = filtered_hulls
 
-            first_point: Vector = Vector(points[0][0],0,points[0][1])
-            last_spoon_position: Vector = None
+            # If the complicated way doesn't work fall back to the regular way
+            if len(shapes) == 0 or shapes is None:
+                log("d", "addAutoSpoonMesh: falling back to regular hull")
+                hull_polygon: Polygon = node.callDecoration("getConvexHullBoundary")
+                if hull_polygon is None:
+                    hull_polygon = node.callDecoration("getConvexHull")
 
-            log("d", "About to list points in convex hull")
-            for point in points:
-                log("d", point)
-
-            for i, point in enumerate(points):
-                point_position = Vector(point[0], 0, point[1])
-                if not last_spoon_position:
-                    self._createSpoonMesh(node, point_position)
-                    last_spoon_position = point_position
+                if not hull_polygon or not hull_polygon.isValid():
+                    log("w", f"Object {node.getName()} cannot be calculated because it has no convex hull.")
                     continue
+                shapes = [hull_polygon]
 
-                difference_vector = last_spoon_position - point_position
-                difference_length = round(difference_vector.length(),4)
+            minimum_gap = minimum_spoon_gap * self._spoon_diameter
+                
+            #points = hull_polygon.getPoints()
+            for shape in shapes:
+                shape_points = shape.getPoints()
+                if shape_points is None:
+                    continue
+                    
+                log("d", "addAutoSpoonMesh: in loop for each shape")
 
-                first_to_last_distance = (first_point - point_position).length() if i == len(points) - 1 else 0
+                first_point: Vector = Vector(shape_points[0][0],0,shape_points[0][1])
+                last_spoon_position: Vector = None
 
-                # Make sure not to place spoons too close together
-                if difference_length >= minimum_spoon_gap or first_to_last_distance >= minimum_spoon_gap:
-                    self._createSpoonMesh(node, point_position)
-                    last_spoon_position = point_position
+                log("d", "About to list points in convex hull")
+                for point in shape_points:
+                    log("d", point)
+
+                for i, point in enumerate(shape_points):
+                    point_position = Vector(point[0], 0, point[1])
+                    if not last_spoon_position:
+                        self._createSpoonMesh(node, point_position, shape)
+                        last_spoon_position = point_position
+                        continue
+
+                    difference_vector = last_spoon_position - point_position
+                    difference_length = round(difference_vector.length(),4)
+
+                    first_to_last_distance = (first_point - point_position).length() if i == len(shape_points) - 1 else 0
+
+                    # Make sure not to place spoons too close together
+                    if (first_to_last_distance == 0  and difference_length >= minimum_gap) or first_to_last_distance >= minimum_gap:
+                        self._createSpoonMesh(node, point_position, shape)
+                        last_spoon_position = point_position
+
+    def _get_base_convex_hulls(self, node: CuraSceneNode, height: float = 0.5) -> list[np.ndarray]:
+        if not node:
+            return None
+        trimesh_mesh = self._toTriMesh(node.getMeshDataTransformed())
+        log("d", f"_get_base_convex_hulls using trimesh = {trimesh_mesh}")
+        log("d", f"_get_base_convex_hulls trimesh is watertight? {trimesh_mesh.is_watertight}")
+        min_y = trimesh_mesh.bounds[0][1]
+        slice_y = min_y + height
+
+        plane_origin = np.array([0, slice_y, 0])
+        plane_normal = np.array([0, 1, 0])
+
+        section = trimesh_mesh.section(plane_normal=plane_normal, plane_origin=plane_origin)
+        if section is not None:
+            if hasattr(section, 'discrete'):  # It's a Path3D (series of contours)
+                uranium_polygons = []
+                for contour in section.discrete:
+                    vertices_2d = np.array([[point[0], point[2]] for point in contour])
+                    if vertices_2d.shape[0] >= 3:
+                        hull = ConvexHull(vertices_2d)
+                        hull_points = vertices_2d[hull.vertices]
+                        uranium_polygon = Polygon(hull_points)
+                        uranium_polygons.append(uranium_polygon)
+                return uranium_polygons
+            elif hasattr(section, 'vertices'): # It's a Trimesh (intersection is a face)
+                vertices_2d = section.vertices[:, [0,2]]
+                if vertices_2d.shape[0] >= 3:
+                    hull = ConvexHull(vertices_2d)
+                    hull_points = vertices_2d[hull.vertices]
+                    return [Polygon(hull_points)]
+                else:
+                    return []
+            else:
+                return []
+        else:
+            return []
+
+
+    #----------------------------------------
+    # Initial Source code from  fieldOfView
+    #----------------------------------------
+    def _toTriMesh(self, mesh_data: MeshData) -> trimesh.base.Trimesh:
+        if not mesh_data:
+            return trimesh.base.Trimesh()
+
+        indices = mesh_data.getIndices()
+        if indices is None:
+            # some file formats (eg 3mf) don't supply indices, but have unique vertices per face
+            indices = np.arange(mesh_data.getVertexCount()).reshape(-1, 3)
+
+        return trimesh.base.Trimesh(vertices=mesh_data.getVertices(), faces=indices)
+
+    def _toMeshData(self, tri_node: trimesh.base.Trimesh) -> MeshData:
+        # Rotate the part to laydown on the build plate
+        # Modification from 5@xes
+        #tri_node.apply_transform(trimesh.transformations.rotation_matrix(math.radians(90), [-1, 0, 0]))
+        tri_faces = tri_node.faces
+        tri_vertices = tri_node.vertices
+        # Following Source code from  fieldOfView
+        # https://github.com/fieldOfView/Cura-SimpleShapes/blob/bac9133a2ddfbf1ca6a3c27aca1cfdd26e847221/SimpleShapes.py#L45
+        indices = []
+        vertices = []
+
+        index_count = 0
+        face_count = 0
+        for tri_face in tri_faces:
+            face = []
+            for tri_index in tri_face:
+                vertices.append(tri_vertices[tri_index])
+                face.append(index_count)
+                index_count += 1
+            indices.append(face)
+            face_count += 1
+
+        vertices = np.asarray(vertices, dtype=np.float32)
+        indices = np.asarray(indices, dtype=np.int32)
+        normals = calculateNormalsFromIndexedVertices(vertices, indices, face_count)
+
+        mesh_data = MeshData(vertices=vertices, indices=indices, normals=normals)
+
+        return mesh_data
 
     def _run_spoon_order(self, output_device) -> None:
         log("d", f"_run_spoon_order running with _print_order of {self._print_order}")
@@ -1004,12 +1189,22 @@ class SpoonAntiWarpingReborn(Tool):
 
     def getPrintOrder(self) -> str:
         """_print_order getter for QML"""
-        log("d", f"Getting Print Order of {self._print_order}")
+        #log("d", f"Getting Print Order of {self._print_order}")
         return self._print_order
 
     def setPrintOrder(self, value: str) -> None:
         """_print_order setter for QML"""
-        log("d", f"Setting Print Order to {value}")
+        #log("d", f"Setting Print Order to {value}")
         self._print_order = value
         self._preferences.setValue("spoonawreborn/print_order", self._print_order)
+        self.propertyChanged.emit()
+
+    def getAutoDensity(self) -> str:
+        """_auto_density getter for QML"""
+        return self._auto_density
+
+    def setAutoDensity(self, value: str) -> None:
+        """_auto_density setter for QML"""
+        self._auto_density = value
+        self._preferences.setValue("spoonawreborn/auto_density", self._auto_density)
         self.propertyChanged.emit()
