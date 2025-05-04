@@ -6,6 +6,8 @@
 # https://github.com/5axes/SpoonAntiWarping
 #--------------------------------------------------------------------------------------------------------------------------------------
 # Version history (Reborn version)
+# v1.1.2:
+#   - Spoons now have ironing specifically turned off in case you're using it in the scene. If you want pretty spoons, you can turn it back on in the Per Object Settings tool.
 # v1.1.1:
 #   - Automatic spoon placement now follows the part of model that touches the build plate. Remarkably this took me less time than manually adding/removing spoons to about four complex objects with the original behaviour.
 #   - If a model has separate areas on the build plate, they are now individually run through automatic placement. Reduces instances of monitor punching by approximately 93% compared to the original behaviour.
@@ -417,6 +419,12 @@ class SpoonAntiWarpingReborn(Tool):
         new_instance = SettingInstance(definition, settings)
         new_instance.setProperty("value", 49) #50 "maximum_value_warning": "50"
         new_instance.resetState()  # Ensure that the state is not seen as a user state.
+        settings.addInstance(new_instance)
+
+        definition = stack.getSettingDefinition("ironing_enabled")
+        new_instance = SettingInstance(definition, settings)
+        new_instance.setProperty("value", False)
+        new_instance.resetState()  # Slashee says: I'm not sure if this actually does anything
         settings.addInstance(new_instance)
 
         # First add node to the scene at the correct position/scale, before parenting, so the Spoon mesh does not get scaled with the parent

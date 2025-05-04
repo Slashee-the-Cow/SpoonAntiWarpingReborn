@@ -30,6 +30,7 @@ They say "a picture is worth a thousand words". I think you deserve more than a 
 ## Known Issues
 - Due to a [bug in Cura](https://github.com/Ultimaker/Cura/issues/20488) it can try and place spoons in the wrong places sometimes. I've put in the best workarounds I know about at this point and it will automatically delete any spoons that would be placed off the build plate.
 - Print ordering uses settings from the first extruder. It might not work properly if different extruders have different settings.
+- In version 5.0 the dropdowns in the settings panel won't show their contents. This is a problem with Cura's theming. Since the active one *is* shown, you can just pick them in turn until you find the correct one.
 
 ## Version History
 ### 1.1.1:
