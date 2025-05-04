@@ -8,6 +8,7 @@
 # Version history (Reborn version)
 # v1.1.2:
 #   - Spoons now have ironing specifically turned off in case you're using it in the scene. If you want pretty spoons, you can turn it back on in the Per Object Settings tool.
+#   - Print ordering now takes G1/G2/G3 non-extrusion moves into account when removing combing moves.
 # v1.1.1:
 #   - Automatic spoon placement now follows the part of model that touches the build plate. Remarkably this took me less time than manually adding/removing spoons to about four complex objects with the original behaviour.
 #   - If a model has separate areas on the build plate, they are now individually run through automatic placement. Reduces instances of monitor punching by approximately 93% compared to the original behaviour.

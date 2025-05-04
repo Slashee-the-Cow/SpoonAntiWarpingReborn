@@ -35,7 +35,7 @@ class GcodeSection:
     end_e: float = 0.0
 
     start_has_move: bool = False
-    start_g0_moves: int = 0
+    start_travel_moves: int = 0
     start_has_zdown: bool = False
     start_has_prime: bool = False
 
@@ -209,11 +209,11 @@ class SpoonOrder:
                                 log("d", f"section_extrude_start_index for {current_section.name} on layer {layer_index} is {section_extrude_start_index}")
                                 break
                             
-                        section_start_g0_count = 0
+                        section_start_travel_count = 0
                         # This isn't changing any lines, just examining what we've got.
                         for start_line in current_section.lines[:section_extrude_start_index]:
                             if start_line.startswith("G0") or (start_line.startswith(("G2", "G3")) and "E" not in start_line):
-                                section_start_g0_count += 1
+                                section_start_travel_count += 1
                                
                                 start_line_x = get_value(start_line, "X")
                                 start_line_y = get_value(start_line, "Y")
@@ -231,14 +231,14 @@ class SpoonOrder:
                             current_section.start_has_move = True
 
                         # Remove any combing G0 moves there might be
-                        current_section.start_g0_moves = section_start_g0_count
-                        if current_section.start_g0_moves > 1:
+                        current_section.start_travel_moves = section_start_travel_count
+                        if current_section.start_travel_moves > 1:
                             new_start_lines: list[str] = []
-                            g0_count = 0
+                            travel_count = 0
                             for start_line in current_section.lines[:section_extrude_start_index]:
-                                if start_line.startswith("G0"):
-                                    g0_count += 1
-                                    if g0_count == current_section.start_g0_moves:
+                                if start_line.startswith("G0") or (start_line.startswith(("G1", "G2", "G3")) and "E" not in start_line):
+                                    travel_count += 1
+                                    if travel_count == current_section.start_travel_moves:
                                         new_start_lines.append(start_line)
                                 else:
                                     new_start_lines.append(start_line)
