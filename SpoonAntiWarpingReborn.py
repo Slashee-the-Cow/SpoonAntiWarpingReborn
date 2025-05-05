@@ -7,8 +7,9 @@
 #--------------------------------------------------------------------------------------------------------------------------------------
 # Version history (Reborn version)
 # v1.1.2:
-#   - Spoons now have ironing specifically turned off in case you're using it in the scene. If you want pretty spoons, you can turn it back on in the Per Object Settings tool.
-#   - Print ordering now takes G1/G2/G3 non-extrusion moves into account when removing combing moves.
+#   - Spoons now have ironing specifically disabled in case you're using it in the scene. If you want pretty spoons, you can turn it back on in the Per Object Settings tool.
+#   - Print ordering now takes G1/G2/G3 non-extrusion moves into account when removing combing moves because when I add checks for G2/G3 moves I neglected to add them everywhere.
+#   - Print ordering now checks for Z hop moves which don't follow Cura's syntax in case another plugin or script decides not to follow that syntax.
 # v1.1.1:
 #   - Automatic spoon placement now follows the part of model that touches the build plate. Remarkably this took me less time than manually adding/removing spoons to about four complex objects with the original behaviour.
 #   - If a model has separate areas on the build plate, they are now individually run through automatic placement. Reduces instances of monitor punching by approximately 93% compared to the original behaviour.
@@ -191,6 +192,11 @@ class SpoonAntiWarpingReborn(Tool):
 
         # Connect order script to write start
         self._application.getOutputDeviceManager().writeStarted.connect(self._run_spoon_order)
+        # Connect order script connector to plugins loaded
+        #self._application.pluginsLoaded.connect(self._connect_write_signal)
+
+    #def _connect_write_signal(self):
+        #self._application.getOutputDeviceManager().writeStarted.connect(self._run_spoon_order)
 
     def event(self, event: Event) -> None:
         super().event(event)
@@ -1109,7 +1115,7 @@ class SpoonAntiWarpingReborn(Tool):
         return mesh_data
 
     def _run_spoon_order(self, output_device) -> None:
-        log("d", f"_run_spoon_order running with _print_order of {self._print_order}")
+        log("i", f"Spoon Anti-Warping Reborn: _run_spoon_order running with _print_order of {self._print_order}")
         match self._print_order:
             case "Unchanged":
                 return
@@ -1124,7 +1130,7 @@ class SpoonAntiWarpingReborn(Tool):
         gcode_dict = getattr(scene, "gcode_dict", {})
         for plate_id in gcode_dict:
             for layer in gcode_dict[plate_id]:
-                log("i", layer.replace("\n",","))
+                log("d", layer.replace("\n",","))
             gcode_dict[plate_id] = self._order_script.execute(gcode_dict[plate_id])
 
     def getSpoonDiameter(self) -> float:

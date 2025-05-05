@@ -212,7 +212,8 @@ class SpoonOrder:
                         section_start_travel_count = 0
                         # This isn't changing any lines, just examining what we've got.
                         for start_line in current_section.lines[:section_extrude_start_index]:
-                            if start_line.startswith("G0") or (start_line.startswith(("G2", "G3")) and "E" not in start_line):
+                            if ((start_line.startswith("G0") and ("X" in start_line or "Y" in start_line))  # Cura generates moves straight along the Z axis with X and Y coordinates anyway. Some disagree.
+                                or (start_line.startswith(("G2", "G3")) and "E" not in start_line)):
                                 section_start_travel_count += 1
                                
                                 start_line_x = get_value(start_line, "X")
@@ -236,7 +237,8 @@ class SpoonOrder:
                             new_start_lines: list[str] = []
                             travel_count = 0
                             for start_line in current_section.lines[:section_extrude_start_index]:
-                                if start_line.startswith("G0") or (start_line.startswith(("G1", "G2", "G3")) and "E" not in start_line):
+                                if ((start_line.startswith("G0") and ("X" in start_line or "Y" in start_line))
+                                    or (start_line.startswith(("G1", "G2", "G3")) and "E" not in start_line)):
                                     travel_count += 1
                                     if travel_count == current_section.start_travel_moves:
                                         new_start_lines.append(start_line)
