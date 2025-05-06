@@ -30,8 +30,13 @@ They say "a picture is worth a thousand words". I think you deserve more than a 
 ## Known Issues
 - Due to a [bug in Cura](https://github.com/Ultimaker/Cura/issues/20488) it can try and place spoons in the wrong places sometimes. I've put in the best workarounds I know about at this point and it will automatically delete any spoons that would be placed off the build plate.
 - Print ordering uses settings from the first extruder. It might not work properly if different extruders have different settings.
+- In version 5.0 the dropdowns in the settings panel won't show their contents. This is a problem with Cura's theming. Since the active one *is* shown, you can just pick them in turn until you find the correct one.
 
 ## Version History
+### 1.1.2:
+- Spoons now have ironing disabled by default in case you are using ironing. This can be changed in the "Per Object Settings" tool by selecting a spoon.
+- Automatic spoon placement now takes all non-extrusion moves into account when removing combing.
+- Automatic spoon placement should have less chance of conflicting with other plugins/post-processing scripts if they insert code which doesn't follow Cura's syntax.
 ### 1.1.1:
 - Automatic spoon placement will now follow the base of the model touching the build plate rather than the overall outline.
 - If a model has multiple separate areas touching the build plate, automatic spoon placement will now run for all of them individually.

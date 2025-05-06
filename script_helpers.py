@@ -83,7 +83,7 @@ def put_value(line: str = "", **kwargs) -> str:
 
 def is_z_hop_line(line: str, z_hop_speed: float = None) -> bool:
     """Returns if a line is (likely) a Z hop (up or down) based on Cura's usual pattern"""
-    return ("G1" in line
+    return (("G1" in line or "G0" in line)  # Apparently some geniuses use G0 when generating Z hops
             and ("F" if z_hop_speed is None else f"F{str(int(z_hop_speed)) if z_hop_speed % 1 == 0.0 else str(z_hop_speed)}") in line
             and "Z" in line
             and "E" not in line
@@ -239,7 +239,7 @@ def make_travel(x: float, y: float, speed: float, z: float = None,
           f"has_start_move: {has_start_move}, has_start_zdown: {has_start_zdown}, has_start_prime: {has_start_prime}, starts_retracted: {starts_retracted}, relative_extrusion: {relative_extrusion}")
     if relative_extrusion:
         e = 0.0
-    output: str = "; SpoonOrder added travel\n"
+    output: str = "; SpoonOrder added travel start\n"
     if e is not None and not relative_extrusion:
         # Reset extruder value
         output += f"G92 E{round(e,5) if not starts_retracted else round(e-retract_distance,5)}\n"
@@ -257,5 +257,6 @@ def make_travel(x: float, y: float, speed: float, z: float = None,
     if retraction and not has_start_prime:
         # Prime filament
         output += f"G1 F{str(int(prime_speed))} E{round(e,5) if not relative_extrusion else retract_distance}"
+    output += "; SpoonOrder added travel end\n"
     log("d", f"make_travel output:\n{output}")
     return output
