@@ -151,8 +151,7 @@ class SpoonOrder:
                     if int(line.strip().split(":")[1]) < 0:
                         previous_layer_lines = None
                         continue
-                    else:
-                        break
+                    break
             if previous_layer_lines is None:
                 previous_layer_lines = data[layer_index - 1].splitlines()  # Yes I'm assuming this won't run on the first layer, because it isn't startup gcode
             if previous_layer_lines_unaltered is None:
@@ -172,13 +171,12 @@ class SpoonOrder:
                         # Check to see if it retracts at the end of the startup gcode
                         if ";LAYER:0" in layer and self.retract_enabled and current_section.first_section:
                             for start_retract in reversed(data[layer_index - 1].splitlines()):
-                                if start_retract.startswith("G1"):
+                                if start_retract.startswith("G1 "):
                                     if is_retract_line(start_retract):
                                         current_section.starts_retracted = True
                                         log("d", ";LAYER:0 just got retract line from previous layer")
                                         break
-                                    else:
-                                        break
+                                    break
                         
                         # Filter out Z-hops and retracts at end of section
                         section_end_index: int = -1
@@ -212,8 +210,8 @@ class SpoonOrder:
                         section_start_travel_count = 0
                         # This isn't changing any lines, just examining what we've got.
                         for start_line in current_section.lines[:section_extrude_start_index]:
-                            if ((start_line.startswith("G0") and ("X" in start_line or "Y" in start_line))  # Cura generates moves straight along the Z axis with X and Y coordinates anyway. Some disagree.
-                                or (start_line.startswith(("G2", "G3")) and "E" not in start_line)):
+                            if ((start_line.startswith("G0 ") and ("X" in start_line or "Y" in start_line))  # Cura generates moves straight along the Z axis with X and Y coordinates anyway. Some disagree.
+                                or (start_line.startswith(("G2 ", "G3 ")) and "E" not in start_line)):
                                 section_start_travel_count += 1
                                
                                 start_line_x = get_value(start_line, "X")
@@ -222,7 +220,7 @@ class SpoonOrder:
                                     current_section.start_x = start_line_x
                                 if start_line_y:
                                     current_section.start_y = start_line_y
-                            elif start_line.startswith("G1") or (start_line.startswith(("G2", "G3")) and "E" in start_line):
+                            elif start_line.startswith("G1 ") or (start_line.startswith(("G2 ", "G3 ")) and "E" in start_line):
                                 if not current_section.start_has_zdown:
                                     current_section.start_has_zdown = is_z_hop_line(start_line, self.hop_speed)
                                 if not current_section.start_has_prime:
@@ -237,8 +235,8 @@ class SpoonOrder:
                             new_start_lines: list[str] = []
                             travel_count = 0
                             for start_line in current_section.lines[:section_extrude_start_index]:
-                                if ((start_line.startswith("G0") and ("X" in start_line or "Y" in start_line))
-                                    or (start_line.startswith(("G1", "G2", "G3")) and "E" not in start_line)):
+                                if ((start_line.startswith("G0 ") and ("X" in start_line or "Y" in start_line))
+                                    or (start_line.startswith(("G1 ", "G2 ", "G3 ")) and "E" not in start_line)):
                                     travel_count += 1
                                     if travel_count == current_section.start_travel_moves:
                                         new_start_lines.append(start_line)
@@ -259,7 +257,7 @@ class SpoonOrder:
                             if layer_index < (len(data) - 1) and self.target_name in data[layer_index + 1]:
                                 new_last_section: list[str] = []
                                 for last_section_line in current_section.lines:
-                                    if last_section_line.startswith(("G0", "G1", "G2", "G3")):
+                                    if last_section_line.startswith(("G0 ", "G1 ", "G2 ", "G3 ")):
                                         new_last_section.append(f";{last_section_line}")
                                     else:
                                         new_last_section.append(last_section_line)
@@ -276,7 +274,7 @@ class SpoonOrder:
                             # We need to get the layer Z as the lowest Z value
                             log("d", "SpoonOrder getting Z value from lowest on layer")
                             for z_line in layer_lines:
-                                if z_line.startswith(("G0", "G1", "G2", "G3", ";G0", ";G1", ";G2", ";G3")):
+                                if z_line.startswith(("G0 ", "G1 ", "G2 ", "G3 ", ";G0 ", ";G1 ", ";G2 ", ";G3 ")):
                                     if "Z" in z_line.lstrip(";"):
                                         new_z = get_value(z_line.lstrip(";"), "Z")
                                         if new_z is not None:
