@@ -83,7 +83,7 @@ def put_value(line: str = "", **kwargs) -> str:
 
 def is_z_hop_line(line: str, z_hop_speed: float = None) -> bool:
     """Returns if a line is (likely) a Z hop (up or down) based on Cura's usual pattern"""
-    return (("G1" in line or "G0" in line)  # Apparently some geniuses use G0 when generating Z hops
+    return (("G1 " in line or "G0 " in line)  # Apparently some geniuses use G0 when generating Z hops
             and ("F" if z_hop_speed is None else f"F{str(int(z_hop_speed)) if z_hop_speed % 1 == 0.0 else str(z_hop_speed)}") in line
             and "Z" in line
             and "E" not in line
@@ -92,7 +92,7 @@ def is_z_hop_line(line: str, z_hop_speed: float = None) -> bool:
 
 def is_retract_line(line: str, retract_speed: float = None) -> bool:
     """Returns if a line is (likely) a retraction (or prime) based on Cura's usual pattern"""
-    return ("G1" in line
+    return ("G1 " in line
             and ("F" if retract_speed is None else f"F{str(int(retract_speed)) if retract_speed % 1 == 0.0 else str(retract_speed)}") in line
             and "E" in line
             and "X" not in line
@@ -133,7 +133,7 @@ def is_extrusion_move(line: str):
     """Checks to see if a line is an extrusion move
     (Starts with G1, G2 or G3, contains E property as well as X and/or Y)
     """
-    return(line.startswith(("G1", "G2", "G3"))
+    return(line.startswith(("G1 ", "G2 ", "G3 "))
            and "E" in line
            and ("X" in line or "Y" in line))
 
@@ -141,7 +141,7 @@ def get_last_xy_coords(section: list[str]) -> tuple[float, float] | None:
     last_x = None
     last_y = None
     for line in reversed(section):
-        if line.startswith(("G0", "G1", "G2", "G3", ";G0", ";G1", ";G2", ";G3")):
+        if line.startswith(("G0 ", "G1 ", "G2 ", "G3 ", ";G0 ", ";G1 ", ";G2 ", ";G3 ")):
             line = line.lstrip(";")
             if last_x is None:
                 if get_value(line, "X") is not None:
@@ -159,7 +159,7 @@ def get_last_xyz_coords(section: list[str]) -> tuple[float, float, float] | None
     last_y: float = None
     last_z: float = None
     for line in reversed(section):
-        if line.startswith(("G0", "G1", "G2", "G3", ";G0", ";G1", ";G2", ";G3")):
+        if line.startswith(("G0 ", "G1 ", "G2 ", "G3 ", ";G0 ", ";G1 ", ";G2 ", ";G3 ")):
             line = line.lstrip(";")
             if last_x is None and "X" in line:
                 last_x = get_value(line, "X")
@@ -179,10 +179,10 @@ def get_last_z(section: list[str]) -> float | None:
 
 def get_start_g0_z(section: list[str]) -> float | None:
     for line in section:
-        if line.startswith(("G0", ";G0")):
+        if line.startswith(("G0 ", ";G0 ")):
             if "Z" in line:
                 return get_value(line, "Z")
-        elif line.startswith(("G1", "G2", "G3", ";G1", ";G2", ";G3")):
+        elif line.startswith(("G1 ", "G2 ", "G3 ", ";G1 ", ";G2 ", ";G3 ")):
             return None
     return None
 
@@ -194,13 +194,13 @@ def get_start_g0_xy_coords(section: list[str]) -> tuple[float, float] | None:
     first_x = None
     first_y = None
     for line in section:
-        if ("G1" or ";G1") in line and ("X" in line or "Y" in line):
+        if ("G1 " or ";G1 ") in line and ("X" in line or "Y" in line):
             if first_x is None or first_y is None:
                 return None
-        elif line.startswith(("G2", "G3", ";G2", ";G3")) and "E" in line:
+        elif line.startswith(("G2 ", "G3 ", ";G2 ", ";G3 ")) and "E" in line:
             if first_x is None or first_y is None:
                 return None
-        elif line.strip(";").startswith("G0") or (line.lstrip(";").startswith(("G2", "G3")) and "E" not in line):
+        elif line.strip(";").startswith("G0 ") or (line.lstrip(";").startswith(("G2 ", "G3 ")) and "E" not in line):
             line = line.lstrip(":")
             if first_x is None:
                 first_x = get_value(line, "X")
