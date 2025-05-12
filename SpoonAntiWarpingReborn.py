@@ -6,9 +6,12 @@
 # https://github.com/5axes/SpoonAntiWarping
 #--------------------------------------------------------------------------------------------------------------------------------------
 # Version history (Reborn version)
+# v1.1.3:
+#   - Spoons now hug the bottom edge of the model much closer (I think they're becoming an item!) if there's a chamfer/fillet/bevel on the bottom of the model.
+#   - Print ordering is now aware of the existence of two digit numbers placed next to a "G" and will specifically look out for only the single digit numbers.
 # v1.1.2:
 #   - Spoons now have ironing specifically disabled in case you're using it in the scene. If you want pretty spoons, you can turn it back on in the Per Object Settings tool.
-#   - Print ordering now takes G1/G2/G3 non-extrusion moves into account when removing combing moves because when I add checks for G2/G3 moves I neglected to add them everywhere.
+#   - Print ordering now takes G1/G2/G3 non-extrusion moves into account when removing combing moves because when I added checks for G2/G3 moves I neglected to add them everywhere.
 #   - Print ordering now checks for Z hop moves which don't follow Cura's syntax in case another plugin or script decides not to follow that syntax.
 # v1.1.1:
 #   - Automatic spoon placement now follows the part of model that touches the build plate. Remarkably this took me less time than manually adding/removing spoons to about four complex objects with the original behaviour.
@@ -942,11 +945,11 @@ class SpoonAntiWarpingReborn(Tool):
             # Logger.log('d', "Mesh : {}".format(node.getName()))
             log("d", "addAutoSpoonMesh: node just passed checks")
 
-
+            shapes: list[np.ndarray] = None
             try:
                 shapes = self._get_base_convex_hulls(node)
             except Exception as e:
-                log("d", f"Exception in _get_base_convex_hulls: {e}")
+                log("e", f"Exception in _get_base_convex_hulls: {e}")
             if shapes is not None:
                 for shape in shapes:
                     log("d", f"addAutoSpoonMesh: just got base convex hulls {shape}")
@@ -986,8 +989,8 @@ class SpoonAntiWarpingReborn(Tool):
                     shapes = filtered_hulls
 
             # If the complicated way doesn't work fall back to the regular way
-            if len(shapes) == 0 or shapes is None:
-                log("d", "addAutoSpoonMesh: falling back to regular hull")
+            if shapes is None or len(shapes) == 0:
+                log("i", "addAutoSpoonMesh: falling back to regular hull")
                 hull_polygon: Polygon = node.callDecoration("getConvexHullBoundary")
                 if hull_polygon is None:
                     hull_polygon = node.callDecoration("getConvexHull")
@@ -1032,7 +1035,7 @@ class SpoonAntiWarpingReborn(Tool):
                         self._createSpoonMesh(node, point_position, shape)
                         last_spoon_position = point_position
 
-    def _get_base_convex_hulls(self, node: CuraSceneNode, height: float = 0.5) -> list[np.ndarray]:
+    def _get_base_convex_hulls(self, node: CuraSceneNode, height: float = 0.05) -> list[np.ndarray]:
         if not node:
             return None
         trimesh_mesh = self._toTriMesh(node.getMeshDataTransformed())
