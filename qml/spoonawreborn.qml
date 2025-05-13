@@ -380,7 +380,7 @@ Item
                     id: autoDensityBox
                     Layout.minimumWidth: textFieldMinWidth
                     Layout.minimumHeight: UM.Theme.getSize("setting_control").height
-                    model: ["Dense", "Normal", "Sparse"]
+                    model: ["Tight", "Dense", "Normal", "Sparse"]
                     onActivated: {
                         setProperty("AutoDensity", currentText)
                     }

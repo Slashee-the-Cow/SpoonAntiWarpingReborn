@@ -33,6 +33,8 @@ They say "a picture is worth a thousand words". I think you deserve more than a 
 - In version 5.0 the dropdowns in the settings panel won't show their contents. This is a problem with Cura's theming. Since the active one *is* shown, you can just pick them in turn until you find the correct one.
 
 ## Version History
+### 1.1.4:
+- Added "Tight" option for automatic placement density. Will generate more spoons, but they're more likely to overlap.
 ### 1.1.3:
 - Automatic spoon placement should now place spoons on the edge of the model correctly in the case of a raised edge (chamfer, fillet, bevel, etc.).
 - Print ordering should no longer accidentally catch (and potentially remove) non-movement commands.

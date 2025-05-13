@@ -919,6 +919,8 @@ class SpoonAntiWarpingReborn(Tool):
         # Minimum gap between automatic spoons as a fraction of spoon diameter
         minimum_spoon_gap: float = 0.8
         match self._auto_density:
+            case "Tight":
+                minimum_spoon_gap = 0.65
             case "Dense":
                 minimum_spoon_gap = 0.8
             case "Normal":
